@@ -5,6 +5,7 @@ import App from './App.js';
 
 import { SwarmProvider } from './hooks/useSwarm.js';
 import { FileTransferProvider } from './hooks/useFileTransfer.js';
+import { MessageProvider } from './hooks/useMessages.js';
 
 const parseArgs = () => {
   const args = process.argv.slice(2);
@@ -57,30 +58,18 @@ Examples:
   return { username, topic };
 };
 
-const systemLogger = (message) => {
-  console.log(`[System] ${message}`);
-};
-
-// Message handler for debugging
-const messageHandler = (roomTopic, user, text) => {
-  // Optional logging for debugging
-  // console.log(`[${roomTopic.slice(0, 6)}] ${user}: ${text}`);
-};
 // Start the application
 const { username, topic } = parseArgs();
 render(
-
-  <SwarmProvider
-    username={username}
-    onMessage={messageHandler}
-    onSystem={systemLogger}
-  >
-    <FileTransferProvider
+  <MessageProvider>
+    <SwarmProvider
       username={username}
-      onMessage={systemLogger}
     >
-      <App initialUsername={username} initialTopic={topic} />
-    </FileTransferProvider>
-  </SwarmProvider>
-
+      <FileTransferProvider
+        username={username}
+      >
+        <App initialUsername={username} initialTopic={topic} />
+      </FileTransferProvider>
+    </SwarmProvider>
+  </MessageProvider>
 );

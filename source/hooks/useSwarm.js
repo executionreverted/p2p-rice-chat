@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import Hyperswarm from 'hyperswarm';
 import b4a from 'b4a';
 import crypto from 'crypto';
+import { useMessageContext } from './useMessages.js';
 
 // Create the context
 const SwarmContext = createContext(null);
@@ -16,7 +17,10 @@ export function useSwarmContext() {
 }
 
 // Provider component
-export function SwarmProvider({ children, username, onMessage, onSystem }) {
+export function SwarmProvider({ children, username }) {
+  // Get message context functions
+  const { addUserMessage, addSystemMessage } = useMessageContext();
+
   // Map to store all swarms by room topic - use useRef to maintain persistent references
   const swarmsRef = useRef(new Map());
 
@@ -25,10 +29,24 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
   const [isConnected, setIsConnected] = useState(false);
   const [peerCount, setPeerCount] = useState(0);
 
-  // Make sure onSystem is a valid function
-  const handleSystemMessage = typeof onSystem === 'function'
-    ? onSystem
-    : (msg) => console.log(`[System] ${msg}`);
+  // Current username
+  const [currentUsername, setCurrentUsername] = useState(username || 'anonymous');
+
+  // Update username
+  const updateUsername = (newUsername) => {
+    setCurrentUsername(newUsername);
+  };
+
+  // Handle system messages
+  const handleSystemMessage = (roomTopic, msg) => {
+    if (roomTopic) {
+      addSystemMessage(roomTopic, msg);
+    } else if (currentRoom) {
+      addSystemMessage(currentRoom.topic, msg);
+    } else {
+      console.log(`[System] ${msg}`);
+    }
+  };
 
   // Create a new room
   const createRoom = (roomName, description = "") => {
@@ -50,7 +68,7 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
 
       return roomData;
     } catch (err) {
-      handleSystemMessage(`Error creating room: ${err.message}`);
+      handleSystemMessage(currentRoom?.topic, `Error creating room: ${err.message}`);
       return null;
     }
   };
@@ -60,12 +78,12 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
     try {
       // Validate room data
       if (!roomData || typeof roomData !== 'object') {
-        handleSystemMessage("Room data is not an object");
+        handleSystemMessage(currentRoom?.topic, "Room data is not an object");
         return false;
       }
 
       if (!roomData.topic || typeof roomData.topic !== 'string') {
-        handleSystemMessage("Room topic is missing or invalid");
+        handleSystemMessage(currentRoom?.topic, "Room topic is missing or invalid");
         return false;
       }
 
@@ -90,9 +108,9 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
         // Store the swarm in our map
         swarmsRef.current.set(topicHex, swarm);
 
-        handleSystemMessage(`Joined new room: ${roomData.name || topicHex.slice(0, 8)}`);
+        handleSystemMessage(topicHex, `Joined new room: ${roomData.name || topicHex.slice(0, 8)}`);
       } else {
-        handleSystemMessage(`Switched to room: ${roomData.name || topicHex.slice(0, 8)}`);
+        handleSystemMessage(topicHex, `Switched to room: ${roomData.name || topicHex.slice(0, 8)}`);
       }
 
       // Set this as the current room
@@ -104,7 +122,7 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
 
       return true;
     } catch (err) {
-      handleSystemMessage(`Error joining room: ${err.message}`);
+      handleSystemMessage(currentRoom?.topic, `Error joining room: ${err.message}`);
       return false;
     }
   };
@@ -129,10 +147,10 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
       // Remove from our map
       swarmsRef.current.delete(topicHex);
 
-      handleSystemMessage(`Left room`);
+      handleSystemMessage(topicHex, `Left room`);
       return true;
     } catch (err) {
-      handleSystemMessage(`Error leaving room: ${err.message}`);
+      handleSystemMessage(currentRoom?.topic, `Error leaving room: ${err.message}`);
       return false;
     }
   };
@@ -143,14 +161,15 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
 
     // Only send system message if this is the current room
     if (currentRoom && currentRoom.topic === roomData.topic) {
-      handleSystemMessage(`New peer connected in ${roomData.name}: ${peerId}`);
+      handleSystemMessage(roomData.topic, `New peer connected in ${roomData.name}: ${peerId}`);
     }
 
     // Update peer count
     updatePeerCount(roomData.topic);
     swarm.on('update', () => {
-      updatePeerCount(roomData, roomData.topic)
-    })
+      updatePeerCount(roomData.topic);
+    });
+
     // Create a unique ID for this peer connection
     peer.connectionId = crypto.randomBytes(4).toString('hex');
 
@@ -158,13 +177,15 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
     const handleData = (data) => {
       try {
         const message = JSON.parse(b4a.toString(data));
+        console.log('Received message:', message);
 
         if (message.type === 'chat') {
-          // Route message to the appropriate handler
-          onMessage(
+          // Add user message to the message context
+          addUserMessage(
             roomData.topic,
             message.username || peerId,
-            message.text
+            message.text,
+            message.timestamp
           );
         }
         // Other message types handled separately
@@ -172,20 +193,20 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
         // Handle plain text messages
         const text = b4a.toString(data);
         if (text.length > 0) {
-          onMessage(roomData.topic, peerId, text);
+          addUserMessage(roomData.topic, peerId, text);
         }
       }
     };
 
     const handleError = (e) => {
       if (currentRoom && currentRoom.topic === roomData.topic) {
-        handleSystemMessage(`Connection error: ${e}`);
+        handleSystemMessage(roomData.topic, `Connection error: ${e}`);
       }
     };
 
     const handleClose = () => {
       if (currentRoom && currentRoom.topic === roomData.topic) {
-        handleSystemMessage(`Peer disconnected: ${peerId}`);
+        handleSystemMessage(roomData.topic, `Peer disconnected: ${peerId}`);
       }
 
       // Update peer count
@@ -222,14 +243,14 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
   // Send message to all peers in the current room
   const sendToCurrentRoom = (message) => {
     if (!currentRoom) {
-      handleSystemMessage("Not in any room");
+      handleSystemMessage(null, "Not in any room");
       return false;
     }
 
     const topicHex = currentRoom.topic;
 
     if (!swarmsRef.current.has(topicHex)) {
-      handleSystemMessage("Room swarm not found");
+      handleSystemMessage(topicHex, "Room swarm not found");
       return false;
     }
 
@@ -237,15 +258,17 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
     const peers = [...swarm.connections];
 
     if (peers.length === 0) {
-      handleSystemMessage("No peers connected in this room");
+      handleSystemMessage(topicHex, "No peers connected in this room");
       return false;
     }
 
     for (const peer of peers) {
       try {
+        console.log(`Sending message to peer: ${b4a.toString(peer.remotePublicKey, 'hex').slice(0, 6)}`);
         peer.write(JSON.stringify(message));
+        console.log('Message sent successfully');
       } catch (err) {
-        handleSystemMessage(`Error sending message: ${err.message}`);
+        handleSystemMessage(topicHex, `Error sending message: ${err.message}`);
       }
     }
 
@@ -274,11 +297,14 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
     currentRoom,
     isConnected,
     peerCount,
+    username: currentUsername,
+    updateUsername,
     createRoom,
     joinRoom,
     leaveRoom,
     sendToCurrentRoom,
-    getRoomPeerCount: updatePeerCount
+    getRoomPeerCount: updatePeerCount,
+    handleSystemMessage
   };
 
   return (
@@ -287,42 +313,3 @@ export function SwarmProvider({ children, username, onMessage, onSystem }) {
     </SwarmContext.Provider>
   );
 }
-
-// Example usage in App.js:
-/*
-import { SwarmProvider, useSwarmContext } from './hooks/SwarmContext';
-
-const App = ({ initialUsername, initialTopic }) => {
-	// Message handling functions
-	const handleSystemMessage = (text) => {
-		// Your system message handling logic
-	};
-
-	const handleIncomingMessage = (roomTopic, username, text) => {
-		// Your message handling logic
-	};
-
-	return (
-		<SwarmProvider
-			username={username}
-			onMessage={handleIncomingMessage}
-			onSystem={handleSystemMessage}
-		>
-			<YourComponents />
-		</SwarmProvider>
-	);
-};
-
-// Inside any component that needs swarm functionality:
-const YourComponent = () => {
-	const {
-		currentRoom,
-		peerCount,
-		sendToCurrentRoom,
-		joinRoom,
-		// etc.
-	} = useSwarmContext();
-
-	// Now you can use these functions and state
-}
-*/

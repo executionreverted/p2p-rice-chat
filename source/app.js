@@ -12,9 +12,20 @@ import TransferStatus from './components/TransferStatus.js';
 import { formatBytes, expandPath, copyToClipboard } from './utils/index.js';
 import { useSwarmContext } from './hooks/useSwarm.js';
 import { useFileTransfer } from './hooks/useFileTransfer.js';
+import { useMessageContext } from './hooks/useMessages.js';
 
 const App = ({ initialUsername, initialTopic }) => {
   const { exit } = useApp();
+
+  const {
+    messagesVersion,
+    addUserMessage,
+    addSystemMessage,
+    getRoomMessages,
+    clearRoomMessages,
+
+  } = useMessageContext();
+
 
   // Core state
   const [username, setUsername] = useState(initialUsername || process.env.USER || 'anonymous');
@@ -22,10 +33,6 @@ const App = ({ initialUsername, initialTopic }) => {
   const [activeView, setActiveView] = useState('chat'); // chat, nick, share, join, newroom
   const [tempInput, setTempInput] = useState('');
 
-  // Message storage - map of room topic to messages array
-  const roomMessagesRef = useRef(new Map());
-  // State to trigger UI updates when messages change
-  const [messagesVersion, setMessagesVersion] = useState(0);
 
   // UI state
   const [focusedInput, setFocusedInput] = useState(true); // true = input, false = menu
@@ -46,47 +53,6 @@ const App = ({ initialUsername, initialTopic }) => {
   // Maximum number of messages to keep per room
   const MAX_MESSAGES = 1000;
 
-  // Message handling functions for current room
-  const handleSystemMessage = (text) => {
-    if (!currentRoom) return;
-
-    const roomTopic = currentRoom.topic;
-
-    // Get existing messages or initialize empty array
-    const messages = roomMessagesRef.current.get(roomTopic) || [];
-    const newMessages = [...messages, { system: true, text }];
-
-    // Limit the number of messages and update the ref
-    roomMessagesRef.current.set(roomTopic, newMessages.slice(-MAX_MESSAGES));
-
-    // Trigger UI update
-    setMessagesVersion(prev => prev + 1);
-  };
-
-  // Handle incoming messages for any room
-  const handleIncomingMessage = (roomTopic, username, text) => {
-    // Get existing messages or initialize empty array
-    const messages = roomMessagesRef.current.get(roomTopic) || [];
-    const newMessages = [...messages, { username, text }];
-
-    // Limit the number of messages and update the ref
-    roomMessagesRef.current.set(roomTopic, newMessages.slice(-MAX_MESSAGES));
-
-    // Trigger UI update
-    setMessagesVersion(prev => prev + 1);
-  };
-
-  // Clear messages for current room
-  const clearMessages = () => {
-    if (!currentRoom) return;
-
-    const roomTopic = currentRoom.topic;
-
-    roomMessagesRef.current.set(roomTopic, [{ system: true, text: "Chat history cleared" }]);
-
-    // Trigger UI update
-    setMessagesVersion(prev => prev + 1);
-  };
 
   // Initialize swarm with room management
   const {
@@ -101,8 +67,6 @@ const App = ({ initialUsername, initialTopic }) => {
     getRoomPeerCount
   } = useSwarmContext({
     username,
-    onMessage: handleIncomingMessage,
-    onSystem: handleSystemMessage
   });
 
   // Initialize file transfer system
@@ -111,18 +75,8 @@ const App = ({ initialUsername, initialTopic }) => {
     transfersVersion,
     shareFile,
     handleFileShareOffer
-  } = useFileTransfer({
-    swarms,
-    currentRoom,
-    username,
-    onMessage: handleSystemMessage
-  });
+  } = useFileTransfer(username);
 
-  // Get messages for currently active room
-  const getCurrentRoomMessages = () => {
-    if (!currentRoom) return [];
-    return roomMessagesRef.current.get(currentRoom.topic) || [];
-  };
 
   // Add a room to the list
   const addRoom = (roomData) => {
@@ -191,14 +145,14 @@ const App = ({ initialUsername, initialTopic }) => {
             roomMessagesRef.current.set(roomToJoin.topic, []);
           }
         } else {
-          handleSystemMessage("Failed to join initial room. Creating a new one...");
+          addSystemMessage("", "Failed to join initial room. Creating a new one...");
           const newRoom = createRoom("Main Room");
           if (newRoom) {
             addRoom(newRoom);
           }
         }
       } catch (err) {
-        handleSystemMessage(`Error initializing room: ${err.message}`);
+        addSystemMessage("", `Error initializing room: ${err.message}`);
       }
     };
 
@@ -224,7 +178,7 @@ const App = ({ initialUsername, initialTopic }) => {
     try {
       // Check if we have access to room information
       if (!currentRoom) {
-        handleSystemMessage("You're not in a room yet.");
+        addSystemMessage(currentRoom.topic, "You're not in a room yet.");
         return null;
       }
 
@@ -240,18 +194,18 @@ const App = ({ initialUsername, initialTopic }) => {
       // Try to copy to clipboard
       copyToClipboard(inviteCode)
         .then(() => {
-          handleSystemMessage("✓ Invitation code copied to clipboard!");
+          addSystemMessage(currentRoom.topic, "✓ Invitation code copied to clipboard!");
         })
         .catch(err => {
-          handleSystemMessage(`Couldn't copy to clipboard: ${err.message}`);
+          addSystemMessage(currentRoom.topic, `Couldn't copy to clipboard: ${err.message}`);
         });
 
-      handleSystemMessage("Share this invitation code:");
-      handleSystemMessage(inviteCode);
+      addSystemMessage(currentRoom.topic, "Share this invitation code:");
+      addSystemMessage(currentRoom.topic, inviteCode);
 
       return inviteCode;
     } catch (err) {
-      handleSystemMessage(`Error generating invite: ${err.message}`);
+      addSystemMessage(currentRoom.topic, `Error generating invite: ${err.message}`);
       return null;
     }
   };
@@ -260,7 +214,7 @@ const App = ({ initialUsername, initialTopic }) => {
   const joinRoomFromInvite = (inviteCode) => {
     try {
       if (!inviteCode || typeof inviteCode !== 'string') {
-        handleSystemMessage("Invalid invitation code format");
+        addSystemMessage("", "Invalid invitation code format");
         return false;
       }
 
@@ -270,17 +224,18 @@ const App = ({ initialUsername, initialTopic }) => {
         roomData = JSON.parse(decoded);
         console.log(roomData)
       } catch (e) {
-        handleSystemMessage(`Could not parse invitation code: ${e.message}`);
+        addSystemMessage(roomData.topic, `Could not parse invitation code: ${e.message}`);
         return false;
       }
 
       if (!roomData || typeof roomData !== 'object') {
-        handleSystemMessage("Invalid invitation data format");
+        addSystemMessage("", "Invalid invitation data format");
         return false;
       }
 
       if (!roomData.topic || typeof roomData.topic !== 'string') {
-        handleSystemMessage("Invitation missing valid topic");
+        addSystemMessage(""
+          , "Invitation missing valid topic");
         return false;
       }
 
@@ -290,12 +245,12 @@ const App = ({ initialUsername, initialTopic }) => {
       if (success) {
         // Add to rooms list
         addRoom(roomData);
-        handleSystemMessage(`Joined room: ${roomData.name || roomData.topic.slice(0, 8)}`);
+        addSystemMessage(roomData.topic, `Joined room: ${roomData.name || roomData.topic.slice(0, 8)}`);
       }
 
       return success;
     } catch (err) {
-      handleSystemMessage(`Error joining room: ${err.message}`);
+      addSystemMessage("", `Error joining room: ${err.message}`);
       return false;
     }
   };
@@ -319,13 +274,13 @@ const App = ({ initialUsername, initialTopic }) => {
         handleCommand(command, args);
       } catch (err) {
         console.error(`Error handling command: ${err.message}`);
-        handleSystemMessage(`Error executing command: ${err.message}`);
+        addSystemMessage("", `Error executing command: ${err.message}`);
       }
     }
     // Send chat message
     else {
       if (!currentRoom) {
-        handleSystemMessage('Not in any room.');
+        addSystemMessage("", 'Not in any room.');
         return;
       }
 
@@ -339,7 +294,7 @@ const App = ({ initialUsername, initialTopic }) => {
         };
 
         // First show own message in current room
-        handleIncomingMessage(currentRoom.topic, username, trimmedInput, message.timestamp);
+        addUserMessage(currentRoom.topic, username, trimmedInput, message.timestamp);
 
         // Force refresh peer count before sending
         if (currentRoom && currentRoom.topic) {
@@ -351,11 +306,11 @@ const App = ({ initialUsername, initialTopic }) => {
 
         // Only show warning if sending failed AND there should be peers
         if (!sendResult && peerCount > 0) {
-          handleSystemMessage('Failed to send message to peers.');
+          addSystemMessage("", 'Failed to send message to peers.');
         }
       } catch (err) {
         console.error(`Error sending message: ${err.message}`);
-        handleSystemMessage(`Failed to send message: ${err.message}`);
+        addSystemMessage("", `Failed to send message: ${err.message}`);
       }
     }
 
@@ -369,7 +324,7 @@ const App = ({ initialUsername, initialTopic }) => {
   const handleTempSubmit = () => {
     if (activeView === 'nick' && tempInput) {
       setUsername(tempInput);
-      handleSystemMessage(`Username changed to ${tempInput}`);
+      addSystemMessage("", `Username changed to ${tempInput}`);
     } else if (activeView === 'share' && tempInput) {
       shareFile(tempInput);
     }
@@ -383,19 +338,19 @@ const App = ({ initialUsername, initialTopic }) => {
   const handleCommand = (command, args) => {
     switch (command) {
       case 'help':
-        handleSystemMessage('Available commands:');
-        handleSystemMessage('/help - Show commands');
-        handleSystemMessage('/exit - Exit chat');
-        handleSystemMessage('/nick <n> - Change username');
-        handleSystemMessage('/share <file> - Share a file');
-        handleSystemMessage('/accept <id> - Accept a file transfer');
-        handleSystemMessage('/peers - Show connected peers');
-        handleSystemMessage('/transfers - Show active transfers');
-        handleSystemMessage('/topic - Show room topic');
-        handleSystemMessage('/clear - Clear chat history');
-        handleSystemMessage('/invite - Generate and copy room invitation');
-        handleSystemMessage('/join <code> - Join room from invitation');
-        handleSystemMessage('/room <n> - Create a new room');
+        addSystemMessage("", 'Available commands:');
+        addSystemMessage("", '/help - Show commands');
+        addSystemMessage("", '/exit - Exit chat');
+        addSystemMessage("", '/nick <n> - Change username');
+        addSystemMessage("", '/share <file> - Share a file');
+        addSystemMessage("", '/accept <id> - Accept a file transfer');
+        addSystemMessage("", '/peers - Show connected peers');
+        addSystemMessage("", '/transfers - Show active transfers');
+        addSystemMessage("", '/topic - Show room topic');
+        addSystemMessage("", '/clear - Clear chat history');
+        addSystemMessage("", '/invite - Generate and copy room invitation');
+        addSystemMessage("", '/join <code> - Join room from invitation');
+        addSystemMessage("", '/room <n> - Create a new room');
         break;
 
       case 'clear':
@@ -407,7 +362,7 @@ const App = ({ initialUsername, initialTopic }) => {
         // Perform cleanup before exiting
         try {
           if (currentRoom) {
-            handleSystemMessage(`Leaving room before exit...`);
+            addSystemMessage(currentRoom.topic, `Leaving room before exit...`);
             leaveRoom(currentRoom.topic)
               .then(() => exit())
               .catch(err => {
@@ -429,16 +384,16 @@ const App = ({ initialUsername, initialTopic }) => {
           // Validate username
           const newName = args[0].trim();
           if (!newName) {
-            handleSystemMessage(`Username cannot be empty`);
+            addSystemMessage("", `Username cannot be empty`);
             return;
           }
           if (newName.length > 20) {
-            handleSystemMessage(`Username too long (max 20 characters)`);
+            addSystemMessage("", `Username too long (max 20 characters)`);
             return;
           }
 
           setUsername(newName);
-          handleSystemMessage(`Username changed to ${newName}`);
+          addSystemMessage("", `Username changed to ${newName}`);
         } else {
           setActiveView('nick');
         }
@@ -460,31 +415,31 @@ const App = ({ initialUsername, initialTopic }) => {
             const success = acceptFileTransfer(transferId);
 
             if (!success) {
-              handleSystemMessage(`Failed to accept file transfer. Use /transfers to see available transfers.`);
+              addSystemMessage("", `Failed to accept file transfer. Use /transfers to see available transfers.`);
             }
           } else {
-            handleSystemMessage(`File transfer acceptance not available`);
+            addSystemMessage("", `File transfer acceptance not available`);
           }
         } else {
-          handleSystemMessage(`Usage: /accept <transfer-id>`);
-          handleSystemMessage(`Use /transfers to see available transfers.`);
+          addSystemMessage("", `Usage: /accept <transfer-id>`);
+          addSystemMessage("", `Use /transfers to see available transfers.`);
         }
         break;
 
       case 'peers':
-        handleSystemMessage(`Connected peers: ${peerCount}`);
+        addSystemMessage("", `Connected peers: ${peerCount}`);
 
         // Add more detailed peer information if available
         if (currentRoom && swarms.has(currentRoom.topic)) {
           const roomSwarm = swarms.get(currentRoom.topic);
           if (roomSwarm.connections && roomSwarm.connections.size > 0) {
-            handleSystemMessage(`Peer details:`);
+            addSystemMessage("", `Peer details:`);
 
             let index = 1;
             for (const peer of roomSwarm.connections) {
               try {
                 const peerId = b4a.toString(peer.remotePublicKey, 'hex').slice(0, 8);
-                handleSystemMessage(`${index}. Peer ${peerId}`);
+                addSystemMessage("", `${index}. Peer ${peerId}`);
                 index++;
               } catch (err) {
                 console.error(`Error getting peer details: ${err.message}`);
@@ -496,29 +451,29 @@ const App = ({ initialUsername, initialTopic }) => {
 
       case 'transfers':
         if (transfers.size === 0) {
-          handleSystemMessage('No active transfers');
+          addSystemMessage("", 'No active transfers');
         } else {
-          handleSystemMessage('Active transfers:');
+          addSystemMessage("", 'Active transfers:');
           for (const [id, transfer] of transfers.entries()) {
             const shortId = id.slice(0, 6);
             const progress = transfer.type === 'upload'
               ? Math.round((transfer.sentChunks / transfer.totalChunks) * 100)
               : Math.round((transfer.receivedChunks / transfer.totalChunks) * 100);
 
-            handleSystemMessage(`${shortId} - ${transfer.type === 'upload' ? 'Upload' : 'Download'}: ${transfer.filename} (${progress}%, ${transfer.status})`);
+            addSystemMessage("", `${shortId} - ${transfer.type === 'upload' ? 'Upload' : 'Download'}: ${transfer.filename} (${progress}%, ${transfer.status})`);
           }
         }
         break;
 
       case 'topic':
         if (currentRoom) {
-          handleSystemMessage(`Room topic: ${currentRoom.topic}`);
+          addSystemMessage("", `Room topic: ${currentRoom.topic}`);
 
           try {
             // Copy to clipboard
             copyToClipboard(currentRoom.topic)
               .then(() => {
-                handleSystemMessage(`Topic copied to clipboard`);
+                addSystemMessage("", `Topic copied to clipboard`);
               })
               .catch(err => {
                 console.error(`Error copying to clipboard: ${err.message}`);
@@ -527,7 +482,7 @@ const App = ({ initialUsername, initialTopic }) => {
             console.error(`Error with topic command: ${err.message}`);
           }
         } else {
-          handleSystemMessage("Not in a room");
+          addSystemMessage("", "Not in a room");
         }
         break;
 
@@ -540,7 +495,7 @@ const App = ({ initialUsername, initialTopic }) => {
           try {
             joinRoomFromInvite(args[0]);
           } catch (err) {
-            handleSystemMessage(`Error joining room: ${err.message}`);
+            addSystemMessage("", `Error joining room: ${err.message}`);
           }
         } else {
           setActiveView('join');
@@ -553,7 +508,7 @@ const App = ({ initialUsername, initialTopic }) => {
 
           // Validate room name
           if (!roomName.trim()) {
-            handleSystemMessage(`Room name cannot be empty`);
+            addSystemMessage("", `Room name cannot be empty`);
             return;
           }
 
@@ -562,7 +517,7 @@ const App = ({ initialUsername, initialTopic }) => {
           if (newRoom) {
             // Add room to the list
             addRoom(newRoom);
-            handleSystemMessage(`Created and joined room: ${roomName}`);
+            addSystemMessage("", `Created and joined room: ${roomName}`);
           }
         } else {
           setActiveView('newroom');
@@ -570,8 +525,8 @@ const App = ({ initialUsername, initialTopic }) => {
         break;
 
       default:
-        handleSystemMessage(`Unknown command: ${command}`);
-        handleSystemMessage(`Type /help to see available commands`);
+        addSystemMessage("", `Unknown command: ${command}`);
+        addSystemMessage("", `Type /help to see available commands`);
     }
   };
   // Handle menu selection
@@ -793,7 +748,7 @@ const App = ({ initialUsername, initialTopic }) => {
         {renderRoomDrawer()}
 
         <Box flexDirection="column" width={showRooms ? "50%" : "70%"}>
-          <ChatMessages messages={getCurrentRoomMessages()} version={messagesVersion} />
+          <ChatMessages messages={getRoomMessages(currentRoom?.topic)} version={messagesVersion} />
           {renderActiveView()}
         </Box>
 

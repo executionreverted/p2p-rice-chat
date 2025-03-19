@@ -19,7 +19,7 @@ export function useFileTransferContext() {
 }
 
 // Provider component
-export function FileTransferProvider({ children, username, onMessage }) {
+export function FileTransferProvider({ children }) {
   // Get swarm functionality from context
   const { swarms, currentRoom } = useSwarmContext();
 
@@ -267,7 +267,9 @@ export function FileTransferProvider({ children, username, onMessage }) {
 }
 
 // Standalone hook for backward compatibility
-export function useFileTransfer({ swarms, currentRoom, username, onMessage }) {
+export function useFileTransfer({ username }) {
+
+  const { swarms, currentRoom } = useSwarmContext();
   // Use refs for transfers
   const transfersRef = useRef(new Map());
   const [transfersVersion, setTransfersVersion] = useState(0);
