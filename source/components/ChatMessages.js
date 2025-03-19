@@ -18,15 +18,15 @@ const Message = ({ message }) => {
 };
 
 // Chat Messages Component
-const ChatMessages = ({ messages }) => {
+const ChatMessages = ({ messages, version }) => {
   // Use this ref to help determine when to scroll
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll function
+  // Auto-scroll function - version prop is used to trigger re-rendering
   useEffect(() => {
     // In a real Ink app, we'd use the messagesEndRef to scroll
     // For now, we're relying on Ink's built-in scrolling behavior
-  }, [messages]);
+  }, [messages, version]);
 
   return (
     <Box

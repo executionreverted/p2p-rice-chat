@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { copyToClipboard } from './clipboard.js';
 
 // Data directory
 export const DATA_DIR = path.join(os.homedir(), '.hyperchat');
@@ -30,3 +31,5 @@ export function expandPath(filePath) {
   }
   return filePath;
 }
+
+export { copyToClipboard };

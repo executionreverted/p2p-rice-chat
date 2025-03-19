@@ -9,35 +9,97 @@ import ChatMessages from './components/ChatMessages.js';
 import InputArea from './components/InputArea.js';
 import CommandMenu from './components/CommandMenu.js';
 import TransferStatus from './components/TransferStatus.js';
-import { formatBytes, expandPath } from './utils/index.js';
+import { formatBytes, expandPath, copyToClipboard } from './utils/index.js';
 import { useSwarm } from './hooks/useSwarm.js';
 import { useFileTransfer } from './hooks/useFileTransfer.js';
 
 const App = ({ initialUsername, initialTopic }) => {
   const { exit } = useApp();
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-  const [username, setUsername] = useState(initialUsername || process.env.USER || 'anonymous');
-  const [activeView, setActiveView] = useState('chat'); // chat, nick, share, help
-  const [tempInput, setTempInput] = useState('');
-  const [focusedInput, setFocusedInput] = useState(true); // true = input, false = menu
 
+  // Core state
+  const [username, setUsername] = useState(initialUsername || process.env.USER || 'anonymous');
+  const [input, setInput] = useState('');
+  const [activeView, setActiveView] = useState('chat'); // chat, nick, share, join, newroom
+  const [tempInput, setTempInput] = useState('');
+
+  // Message storage - map of room topic to messages array
+  const roomMessagesRef = useRef(new Map());
+  // State to trigger UI updates when messages change
+  const [messagesVersion, setMessagesVersion] = useState(0);
+
+  // UI state
+  const [focusedInput, setFocusedInput] = useState(true); // true = input, false = menu
+  const [showMenu, setShowMenu] = useState(false); // Controls menu visibility
+  const [showRooms, setShowRooms] = useState(true); // Controls room drawer visibility
+
+  // Room management
+  const [rooms, setRooms] = useState([]);
+  const [activeRoomIndex, setActiveRoomIndex] = useState(0);
+
+  // Focus management
   const { focusNext, focusPrevious } = useFocusManager();
   const inputFocus = useFocus({ autoFocus: true });
   const menuFocus = useFocus();
 
-  // Maximum number of messages to keep
+  // Maximum number of messages to keep per room
+
+  // Maximum number of messages to keep per room
   const MAX_MESSAGES = 1000;
 
-  // Initialize swarm and connection handlers
+  // Message handling functions for current room
+  const handleSystemMessage = (text) => {
+    if (!currentRoom) return;
+
+    const roomTopic = currentRoom.topic;
+
+    // Get existing messages or initialize empty array
+    const messages = roomMessagesRef.current.get(roomTopic) || [];
+    const newMessages = [...messages, { system: true, text }];
+
+    // Limit the number of messages and update the ref
+    roomMessagesRef.current.set(roomTopic, newMessages.slice(-MAX_MESSAGES));
+
+    // Trigger UI update
+    setMessagesVersion(prev => prev + 1);
+  };
+
+  // Handle incoming messages for any room
+  const handleIncomingMessage = (roomTopic, username, text) => {
+    // Get existing messages or initialize empty array
+    const messages = roomMessagesRef.current.get(roomTopic) || [];
+    const newMessages = [...messages, { username, text }];
+
+    // Limit the number of messages and update the ref
+    roomMessagesRef.current.set(roomTopic, newMessages.slice(-MAX_MESSAGES));
+
+    // Trigger UI update
+    setMessagesVersion(prev => prev + 1);
+  };
+
+  // Clear messages for current room
+  const clearMessages = () => {
+    if (!currentRoom) return;
+
+    const roomTopic = currentRoom.topic;
+
+    roomMessagesRef.current.set(roomTopic, [{ system: true, text: "Chat history cleared" }]);
+
+    // Trigger UI update
+    setMessagesVersion(prev => prev + 1);
+  };
+
+  // Initialize swarm with room management
   const {
-    swarm,
+    swarms,
+    currentRoom,
     isConnected,
     peerCount,
-    roomTopic,
-    sendToAllPeers
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    sendToCurrentRoom,
+    getRoomPeerCount
   } = useSwarm({
-    initialTopic,
     username,
     onMessage: handleIncomingMessage,
     onSystem: handleSystemMessage
@@ -46,37 +108,194 @@ const App = ({ initialUsername, initialTopic }) => {
   // Initialize file transfer system
   const {
     transfers,
+    transfersVersion,
     shareFile,
     handleFileShareOffer
   } = useFileTransfer({
-    swarm,
+    swarms,
+    currentRoom,
     username,
     onMessage: handleSystemMessage
   });
 
-  // Add a message to the chat
-  function handleSystemMessage(text) {
-    setMessages(prev => {
-      const newMessages = [...prev, { system: true, text }];
-      // Limit the number of messages
-      return newMessages.slice(-MAX_MESSAGES);
-    });
-  }
+  // Get messages for currently active room
+  const getCurrentRoomMessages = () => {
+    if (!currentRoom) return [];
+    return roomMessagesRef.current.get(currentRoom.topic) || [];
+  };
 
-  // Handle incoming messages
-  function handleIncomingMessage(username, text) {
-    setMessages(prev => {
-      const newMessages = [...prev, { username, text }];
-      // Limit the number of messages
-      return newMessages.slice(-MAX_MESSAGES);
-    });
-  }
+  // Add a room to the list
+  const addRoom = (roomData) => {
+    if (!roomData || !roomData.topic) {
+      return false;
+    }
 
-  // Clear all messages
-  const clearMessages = () => {
-    setMessages([]);
-    handleSystemMessage("Chat history cleared");
-  }
+    const newRoom = {
+      name: roomData.name || `Room ${roomData.topic.slice(0, 8)}`,
+      description: roomData.description || "",
+      topic: roomData.topic
+    };
+
+    // Check if room already exists
+    const exists = rooms.some(room => room.topic === roomData.topic);
+
+    if (!exists) {
+      setRooms(prev => [...prev, newRoom]);
+      // Set active index to the last item (new room)
+      setActiveRoomIndex(rooms.length);
+    } else {
+      // Find and focus the existing room
+      const roomIndex = rooms.findIndex(room => room.topic === roomData.topic);
+      setActiveRoomIndex(roomIndex >= 0 ? roomIndex : 0);
+    }
+
+    return true;
+  };
+
+  // Handle switching rooms
+  const handleRoomSelect = (index) => {
+    if (index >= 0 && index < rooms.length) {
+      const selectedRoom = rooms[index];
+      joinRoom(selectedRoom);
+      setActiveRoomIndex(index);
+    }
+  };
+
+  // Effect to initialize with a default room
+  useEffect(() => {
+    const initRoom = async () => {
+      try {
+        let roomToJoin;
+
+        if (initialTopic) {
+          // Join existing room from initialTopic
+          roomToJoin = {
+            name: "Joined Room",
+            description: "Room joined from topic",
+            topic: initialTopic
+          };
+        } else {
+          // Create a default room
+          roomToJoin = {
+            name: "Main Room",
+            description: "Default chat room",
+            topic: b4a.toString(crypto.randomBytes(32), 'hex')
+          };
+        }
+
+        // Join the room
+        const joined = await joinRoom(roomToJoin);
+
+        if (joined) {
+          // Add to room list
+          addRoom(roomToJoin);
+        } else {
+          handleSystemMessage("Failed to join initial room. Creating a new one...");
+          const newRoom = createRoom("Main Room");
+          if (newRoom) {
+            addRoom(newRoom);
+          }
+        }
+      } catch (err) {
+        handleSystemMessage(`Error initializing room: ${err.message}`);
+      }
+    };
+
+    initRoom();
+  }, []);
+
+  // Effect to update room list when currentRoom changes
+  useEffect(() => {
+    if (currentRoom) {
+      // Check if the current room is already in our list
+      const roomExists = rooms.some(room => room.topic === currentRoom.topic);
+
+      if (!roomExists) {
+        addRoom(currentRoom);
+      }
+    }
+  }, [currentRoom]);
+
+  // Generate an invitation code for the current room
+  const generateInviteCode = () => {
+    try {
+      // Check if we have access to room information
+      if (!currentRoom) {
+        handleSystemMessage("You're not in a room yet.");
+        return null;
+      }
+
+      const roomData = {
+        name: currentRoom.name || "HyperChat Room",
+        description: currentRoom.description || "Join my chat room!",
+        topic: currentRoom.topic
+      };
+
+      // Convert to base64
+      const inviteCode = Buffer.from(JSON.stringify(roomData)).toString('base64');
+
+      // Try to copy to clipboard
+      copyToClipboard(inviteCode)
+        .then(() => {
+          handleSystemMessage("✓ Invitation code copied to clipboard!");
+        })
+        .catch(err => {
+          handleSystemMessage(`Couldn't copy to clipboard: ${err.message}`);
+        });
+
+      handleSystemMessage("Share this invitation code:");
+      handleSystemMessage(inviteCode);
+
+      return inviteCode;
+    } catch (err) {
+      handleSystemMessage(`Error generating invite: ${err.message}`);
+      return null;
+    }
+  };
+
+  // Join a room from invitation code
+  const joinRoomFromInvite = (inviteCode) => {
+    try {
+      if (!inviteCode || typeof inviteCode !== 'string') {
+        handleSystemMessage("Invalid invitation code format");
+        return false;
+      }
+
+      let roomData;
+      try {
+        const decoded = Buffer.from(inviteCode, 'base64').toString();
+        roomData = JSON.parse(decoded);
+        console.log(roomData)
+      } catch (e) {
+        handleSystemMessage(`Could not parse invitation code: ${e.message}`);
+        return false;
+      }
+
+      if (!roomData || typeof roomData !== 'object') {
+        handleSystemMessage("Invalid invitation data format");
+        return false;
+      }
+
+      if (!roomData.topic || typeof roomData.topic !== 'string') {
+        handleSystemMessage("Invitation missing valid topic");
+        return false;
+      }
+
+      // Join the room
+      const success = joinRoom(roomData);
+
+      if (success) {
+        // Add to rooms list
+        addRoom(roomData);
+        handleSystemMessage(`Joined room: ${roomData.name || roomData.topic.slice(0, 8)}`);
+      }
+
+      return success;
+    } catch (err) {
+      handleSystemMessage(`Error joining room: ${err.message}`);
+      return false;
+    }
+  };
 
   // Handle user input for chat
   const handleChatInput = (value) => {
@@ -84,36 +303,54 @@ const App = ({ initialUsername, initialTopic }) => {
   };
 
   // Handle input submission
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!input.trim()) return;
 
     // Handle commands
     if (input.startsWith('/')) {
       const [command, ...args] = input.slice(1).split(' ');
-      await handleCommand(command.toLowerCase(), args);
+      handleCommand(command.toLowerCase(), args);
     }
     // Send chat message
     else {
+      if (!currentRoom) {
+        handleSystemMessage('Not in any room.');
+        return;
+      }
+
       if (peerCount === 0) {
         handleSystemMessage('No peers connected. Your message wasn\'t sent to anyone.');
       } else {
-        sendToAllPeers({
+        sendToCurrentRoom({
           type: 'chat',
           username: username,
           text: input,
           timestamp: Date.now()
         });
 
-        // Show own message
-        handleIncomingMessage(username, input);
+        // Show own message in current room
+        handleIncomingMessage(currentRoom.topic, username, input);
       }
     }
 
     setInput('');
   };
 
+  // Handle temp input for modals
+  const handleTempSubmit = () => {
+    if (activeView === 'nick' && tempInput) {
+      setUsername(tempInput);
+      handleSystemMessage(`Username changed to ${tempInput}`);
+    } else if (activeView === 'share' && tempInput) {
+      shareFile(tempInput);
+    }
+
+    setTempInput('');
+    setActiveView('chat');
+  };
+
   // Handle commands
-  const handleCommand = async (command, args) => {
+  const handleCommand = (command, args) => {
     switch (command) {
       case 'help':
         handleSystemMessage('Available commands:');
@@ -125,6 +362,9 @@ const App = ({ initialUsername, initialTopic }) => {
         handleSystemMessage('/transfers - Show active transfers');
         handleSystemMessage('/topic - Show room topic');
         handleSystemMessage('/clear - Clear chat history');
+        handleSystemMessage('/invite - Generate and copy room invitation');
+        handleSystemMessage('/join <code> - Join room from invitation');
+        handleSystemMessage('/room <n> - Create a new room');
         break;
 
       case 'clear':
@@ -175,7 +415,42 @@ const App = ({ initialUsername, initialTopic }) => {
         break;
 
       case 'topic':
-        handleSystemMessage(`Room topic: ${roomTopic}`);
+        if (currentRoom) {
+          handleSystemMessage(`Room topic: ${currentRoom.topic}`);
+        } else {
+          handleSystemMessage("Not in a room");
+        }
+        break;
+
+      case 'invite':
+        generateInviteCode();
+        break;
+
+      case 'join':
+        if (args.length > 0) {
+          try {
+            joinRoomFromInvite(args[0]);
+          } catch (err) {
+            handleSystemMessage(`Error joining room: ${err.message}`);
+          }
+        } else {
+          setActiveView('join');
+        }
+        break;
+
+      case 'room':
+        if (args.length > 0) {
+          const roomName = args.join(' ');
+          const newRoom = createRoom(roomName);
+
+          if (newRoom) {
+            // Add room to the list
+            addRoom(newRoom);
+            handleSystemMessage(`Created and joined room: ${roomName}`);
+          }
+        } else {
+          setActiveView('newroom');
+        }
         break;
 
       default:
@@ -204,27 +479,24 @@ const App = ({ initialUsername, initialTopic }) => {
       case 'clear':
         clearMessages();
         break;
+      case 'invite':
+        generateInviteCode();
+        break;
+      case 'join':
+        setActiveView('join');
+        break;
+      case 'room':
+        setActiveView('newroom');
+        break;
       case 'exit':
         exit();
         break;
     }
 
-    // Switch focus back to input after selection
+    // Close the menu and switch focus back to input
+    setShowMenu(false);
     setFocusedInput(true);
     inputFocus.focus();
-  };
-
-  // Handle temp input for modals
-  const handleTempSubmit = () => {
-    if (activeView === 'nick' && tempInput) {
-      setUsername(tempInput);
-      handleSystemMessage(`Username changed to ${tempInput}`);
-    } else if (activeView === 'share' && tempInput) {
-      shareFile(tempInput);
-    }
-
-    setTempInput('');
-    setActiveView('chat');
   };
 
   // Configure keyboard navigation
@@ -235,23 +507,82 @@ const App = ({ initialUsername, initialTopic }) => {
         // Return to chat view if in a modal
         setActiveView('chat');
         setTempInput('');
-      } else if (focusedInput) {
-        // Switch focus to menu when ESC is pressed in input area
-        setFocusedInput(false);
-        menuFocus.focus();
+      } else {
+        // Toggle menu visibility
+        setShowMenu(!showMenu);
+        if (!showMenu) {
+          setFocusedInput(false);
+          menuFocus.focus();
+        } else {
+          setFocusedInput(true);
+          inputFocus.focus();
+        }
       }
     }
 
-    // Handle Tab key for navigation between input and menu
-    if (key.tab) {
-      setFocusedInput(!focusedInput);
-      if (focusedInput) {
-        menuFocus.focus();
-      } else {
-        inputFocus.focus();
-      }
+    // Handle Tab key for room drawer
+    if (key.tab && key.shift) {
+      setShowRooms(!showRooms);
+    }
+
+    // Use arrow keys to navigate rooms when drawer is open
+    if (showRooms && key.upArrow && activeRoomIndex > 0) {
+      setActiveRoomIndex(activeRoomIndex - 1);
+    }
+
+    if (showRooms && key.downArrow && activeRoomIndex < rooms.length - 1) {
+      setActiveRoomIndex(activeRoomIndex + 1);
+    }
+
+    // Use Enter to select a room
+    if (showRooms && key.return && !focusedInput) {
+      handleRoomSelect(activeRoomIndex);
     }
   });
+
+  // Render the room drawer
+  const renderRoomDrawer = () => {
+    if (!showRooms) return null;
+
+    return (
+      <Box
+        width={20}
+        height={15}
+        borderStyle="single"
+        borderColor="cyan"
+        flexDirection="column"
+        marginRight={1}
+      >
+        <Box padding={1} backgroundColor="blue">
+          <Text bold color="white">Rooms</Text>
+        </Box>
+
+        {rooms.length === 0 ? (
+          <Box padding={1} flexDirection="column">
+            <Text color="gray">No rooms yet.</Text>
+            <Text color="gray">Use /room to create one.</Text>
+          </Box>
+        ) : (
+          rooms.map((room, index) => (
+            <Box
+              key={index}
+              padding={1}
+              backgroundColor={index === activeRoomIndex ? "cyan" : undefined}
+            >
+              <Text color={index === activeRoomIndex ? "black" : "white"}>
+                {room.name || `Room ${index + 1}`}
+              </Text>
+            </Box>
+          ))
+        )}
+
+        <Box marginTop={1} padding={1} flexDirection="column">
+          <Text dim>↑/↓: Navigate</Text>
+          <Text dim>Enter: Select</Text>
+        </Box>
+      </Box>
+    );
+  };
 
   // Render different views
   const renderActiveView = () => {
@@ -282,6 +613,40 @@ const App = ({ initialUsername, initialTopic }) => {
           </Box>
         );
 
+      case 'join':
+        return (
+          <Box flexDirection="column" borderStyle="single" padding={1}>
+            <Text>Enter invitation code:</Text>
+            <InputArea
+              value={tempInput}
+              onChange={setTempInput}
+              onSubmit={(value) => {
+                joinRoomFromInvite(value);
+                setTempInput('');
+                setActiveView('chat');
+              }}
+              isFocused={true}
+            />
+          </Box>
+        );
+
+      case 'newroom':
+        return (
+          <Box flexDirection="column" borderStyle="single" padding={1}>
+            <Text>Enter room name:</Text>
+            <InputArea
+              value={tempInput}
+              onChange={setTempInput}
+              onSubmit={(value) => {
+                handleCommand('room', [value]);
+                setTempInput('');
+                setActiveView('chat');
+              }}
+              isFocused={true}
+            />
+          </Box>
+        );
+
       case 'chat':
       default:
         return (
@@ -290,7 +655,7 @@ const App = ({ initialUsername, initialTopic }) => {
             onChange={handleChatInput}
             onSubmit={handleSubmit}
             placeholder="Type a message or /command..."
-            isFocused={inputFocus.isFocused}
+            isFocused={inputFocus.isFocused && !showMenu}
           />
         );
     }
@@ -302,22 +667,30 @@ const App = ({ initialUsername, initialTopic }) => {
         <Text backgroundColor="blue" color="white" bold> HyperChat - P2P Chat with File Sharing </Text>
       </Box>
 
-      <StatusBar peerCount={peerCount} username={username} room={roomTopic} />
+      <StatusBar
+        peerCount={peerCount}
+        username={username}
+        room={currentRoom?.name || "Not connected"}
+      />
 
       <Box flexDirection="row" marginY={1}>
-        <Box flexDirection="column" width="70%">
-          <ChatMessages messages={messages} />
+        {renderRoomDrawer()}
+
+        <Box flexDirection="column" width={showRooms ? "50%" : "70%"}>
+          <ChatMessages messages={getCurrentRoomMessages()} version={messagesVersion} />
           {renderActiveView()}
         </Box>
 
-        <Box flexDirection="column" width="30%" marginLeft={1}>
-          <CommandMenu onSelect={handleMenuSelect} />
-          <TransferStatus transfers={transfers} />
-        </Box>
+        {showMenu && (
+          <Box flexDirection="column" width="30%" marginLeft={1}>
+            <CommandMenu onSelect={handleMenuSelect} isFocused={true} />
+            <TransferStatus transfers={transfers} version={transfersVersion} />
+          </Box>
+        )}
       </Box>
 
       <Box marginTop={1}>
-        <Text color="gray">Press Tab to navigate, Esc to cancel, Enter to submit</Text>
+        <Text color="gray">ESC: Toggle Menu | Shift+Tab: Room Drawer | Enter: Submit</Text>
       </Box>
     </Box>
   );

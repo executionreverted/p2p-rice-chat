@@ -1,20 +1,31 @@
-import { useState, useEffect } from 'react';
+
+import { useState, useEffect, useRef } from 'react';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { CHUNK_SIZE, formatBytes, expandPath } from '../utils/index.js';
 
-export function useFileTransfer({ swarm, username, onMessage }) {
-  const [transfers, setTransfers] = useState(new Map());
-  // Maintain a reference to active transfers that can be modified by handlers
-  const activeTransfers = new Map();
+export function useFileTransfer({ swarms, currentRoom, username, onMessage }) {
+  // Use refs for long-lived objects that shouldn't trigger re-renders
+  const transfersRef = useRef(new Map());
+  // State to trigger UI updates when transfers change
+  const [transfersVersion, setTransfersVersion] = useState(0);
 
-  // Share a file with peers
+  // Helper to trigger UI update when transfers change
+  const updateTransfersUI = () => {
+    setTransfersVersion(prev => prev + 1);
+  };
+  // Share a file with peers in current room
   const shareFile = (filePath) => {
     try {
       if (!filePath) {
         onMessage('Usage: /share <file-path>');
+        return;
+      }
+
+      if (!currentRoom) {
+        onMessage('You must be in a room to share files');
         return;
       }
 
@@ -36,6 +47,14 @@ export function useFileTransfer({ swarm, username, onMessage }) {
       const filename = path.basename(filePath);
       onMessage(`Sharing file: ${filename} (${formatBytes(stats.size)})`);
 
+      // Get the swarm for current room
+      if (!swarms.has(currentRoom.topic)) {
+        onMessage('Cannot find room swarm');
+        return;
+      }
+
+      const roomSwarm = swarms.get(currentRoom.topic);
+
       // Send file share message
       const fileShareMsg = {
         type: 'file-share',
@@ -46,10 +65,10 @@ export function useFileTransfer({ swarm, username, onMessage }) {
         timestamp: Date.now()
       };
 
-      // Send to all peers
-      const peers = [...swarm.connections];
+      // Send to all peers in this room
+      const peers = [...roomSwarm.connections];
       if (peers.length === 0) {
-        onMessage('No peers connected. Cannot share file.');
+        onMessage('No peers connected in this room. Cannot share file.');
         return;
       }
 
@@ -72,25 +91,21 @@ export function useFileTransfer({ swarm, username, onMessage }) {
     onMessage(`Type "/accept ${message.filename}" to accept the download`);
   };
 
-  // Update transfers in state
+  // Update transfers periodically to reflect UI changes
   useEffect(() => {
     const interval = setInterval(() => {
-      setTransfers(new Map(activeTransfers));
+      // Only trigger update if there are changes to show
+      if (transfersRef.current.size > 0) {
+        updateTransfersUI();
+      }
     }, 1000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // In a complete implementation, you would also include:
-  // - handleFileRequest
-  // - handleFileChunk
-  // - handleChunkAck
-  // - handleTransferComplete
-  // - sendNextChunks
-  // These would be similar to the original code but adapted to the React/hooks pattern
-
   return {
-    transfers,
+    transfers: transfersRef.current,
+    transfersVersion,
     shareFile,
     handleFileShareOffer
   };

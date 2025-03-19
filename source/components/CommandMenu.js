@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from 'ink';
+import { Box, Text } from 'ink';
 import SelectInput from 'ink-select-input';
 
 const CommandMenu = ({ onSelect, isFocused }) => {
@@ -10,11 +10,17 @@ const CommandMenu = ({ onSelect, isFocused }) => {
     { label: 'Show Peers', value: 'peers' },
     { label: 'Show Transfers', value: 'transfers' },
     { label: 'Clear Messages', value: 'clear' },
+    { label: 'Generate Invite', value: 'invite' },
+    { label: 'Join Room', value: 'join' },
+    { label: 'Create Room', value: 'room' },
     { label: 'Exit', value: 'exit' },
   ];
 
   return (
     <Box borderStyle="single" borderColor={isFocused ? "green" : "gray"}>
+      <Box padding={1} backgroundColor="blue">
+        <Text bold color="white">Menu</Text>
+      </Box>
       <SelectInput
         items={items}
         onSelect={onSelect}
