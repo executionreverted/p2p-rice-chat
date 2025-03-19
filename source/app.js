@@ -10,7 +10,7 @@ import InputArea from './components/InputArea.js';
 import CommandMenu from './components/CommandMenu.js';
 import TransferStatus from './components/TransferStatus.js';
 import { formatBytes, expandPath, copyToClipboard } from './utils/index.js';
-import { useSwarm } from './hooks/useSwarm.js';
+import { useSwarmContext } from './hooks/useSwarm.js';
 import { useFileTransfer } from './hooks/useFileTransfer.js';
 
 const App = ({ initialUsername, initialTopic }) => {
@@ -99,7 +99,7 @@ const App = ({ initialUsername, initialTopic }) => {
     leaveRoom,
     sendToCurrentRoom,
     getRoomPeerCount
-  } = useSwarm({
+  } = useSwarmContext({
     username,
     onMessage: handleIncomingMessage,
     onSystem: handleSystemMessage
@@ -176,19 +176,20 @@ const App = ({ initialUsername, initialTopic }) => {
           };
         } else {
           // Create a default room
-          roomToJoin = {
-            name: "Main Room",
-            description: "Default chat room",
-            topic: b4a.toString(crypto.randomBytes(32), 'hex')
-          };
+          return
         }
 
         // Join the room
         const joined = await joinRoom(roomToJoin);
 
         if (joined) {
-          // Add to room list
+          // Add to room list and don't trigger another join in the second useEffect
           addRoom(roomToJoin);
+
+          // Initialize message array for this room if not already initialized
+          if (!roomMessagesRef.current.has(roomToJoin.topic)) {
+            roomMessagesRef.current.set(roomToJoin.topic, []);
+          }
         } else {
           handleSystemMessage("Failed to join initial room. Creating a new one...");
           const newRoom = createRoom("Main Room");
@@ -202,7 +203,8 @@ const App = ({ initialUsername, initialTopic }) => {
     };
 
     initRoom();
-  }, []);
+    // Add initialTopic to dependencies to ensure this only runs once when needed
+  }, [initialTopic]);
 
   // Effect to update room list when currentRoom changes
   useEffect(() => {
@@ -210,11 +212,12 @@ const App = ({ initialUsername, initialTopic }) => {
       // Check if the current room is already in our list
       const roomExists = rooms.some(room => room.topic === currentRoom.topic);
 
-      if (!roomExists) {
+      if (!roomExists && currentRoom.topic !== initialTopic) {
+        // Only add the room if it's not the initial room we already joined
         addRoom(currentRoom);
       }
     }
-  }, [currentRoom]);
+  }, [currentRoom, initialTopic]);
 
   // Generate an invitation code for the current room
   const generateInviteCode = () => {
@@ -302,14 +305,22 @@ const App = ({ initialUsername, initialTopic }) => {
     setInput(value);
   };
 
-  // Handle input submission
   const handleSubmit = () => {
-    if (!input.trim()) return;
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return;
 
     // Handle commands
-    if (input.startsWith('/')) {
-      const [command, ...args] = input.slice(1).split(' ');
-      handleCommand(command.toLowerCase(), args);
+    if (trimmedInput.startsWith('/')) {
+      const parts = trimmedInput.slice(1).split(' ');
+      const command = parts[0].toLowerCase();
+      const args = parts.slice(1);
+
+      try {
+        handleCommand(command, args);
+      } catch (err) {
+        console.error(`Error handling command: ${err.message}`);
+        handleSystemMessage(`Error executing command: ${err.message}`);
+      }
     }
     // Send chat message
     else {
@@ -318,25 +329,43 @@ const App = ({ initialUsername, initialTopic }) => {
         return;
       }
 
-      if (peerCount === 0) {
-        handleSystemMessage('No peers connected. Your message wasn\'t sent to anyone.');
-      } else {
-        sendToCurrentRoom({
+      try {
+        // Create the message object
+        const message = {
           type: 'chat',
           username: username,
-          text: input,
+          text: trimmedInput,
           timestamp: Date.now()
-        });
+        };
 
-        // Show own message in current room
-        handleIncomingMessage(currentRoom.topic, username, input);
+        // First show own message in current room
+        handleIncomingMessage(currentRoom.topic, username, trimmedInput, message.timestamp);
+
+        // Force refresh peer count before sending
+        if (currentRoom && currentRoom.topic) {
+          getRoomPeerCount(currentRoom.topic);
+        }
+
+        // Try to send to peers
+        const sendResult = sendToCurrentRoom(message);
+
+        // Only show warning if sending failed AND there should be peers
+        if (!sendResult && peerCount > 0) {
+          handleSystemMessage('Failed to send message to peers.');
+        }
+      } catch (err) {
+        console.error(`Error sending message: ${err.message}`);
+        handleSystemMessage(`Failed to send message: ${err.message}`);
       }
     }
 
     setInput('');
   };
 
+
   // Handle temp input for modals
+
+
   const handleTempSubmit = () => {
     if (activeView === 'nick' && tempInput) {
       setUsername(tempInput);
@@ -350,6 +379,7 @@ const App = ({ initialUsername, initialTopic }) => {
   };
 
   // Handle commands
+
   const handleCommand = (command, args) => {
     switch (command) {
       case 'help':
@@ -358,6 +388,7 @@ const App = ({ initialUsername, initialTopic }) => {
         handleSystemMessage('/exit - Exit chat');
         handleSystemMessage('/nick <n> - Change username');
         handleSystemMessage('/share <file> - Share a file');
+        handleSystemMessage('/accept <id> - Accept a file transfer');
         handleSystemMessage('/peers - Show connected peers');
         handleSystemMessage('/transfers - Show active transfers');
         handleSystemMessage('/topic - Show room topic');
@@ -373,14 +404,41 @@ const App = ({ initialUsername, initialTopic }) => {
 
       case 'exit':
       case 'quit':
-        exit();
+        // Perform cleanup before exiting
+        try {
+          if (currentRoom) {
+            handleSystemMessage(`Leaving room before exit...`);
+            leaveRoom(currentRoom.topic)
+              .then(() => exit())
+              .catch(err => {
+                console.error(`Error leaving room: ${err.message}`);
+                exit();
+              });
+          } else {
+            exit();
+          }
+        } catch (err) {
+          console.error(`Error during exit: ${err.message}`);
+          exit();
+        }
         break;
 
       case 'nick':
       case 'name':
         if (args.length > 0) {
-          setUsername(args[0]);
-          handleSystemMessage(`Username changed to ${args[0]}`);
+          // Validate username
+          const newName = args[0].trim();
+          if (!newName) {
+            handleSystemMessage(`Username cannot be empty`);
+            return;
+          }
+          if (newName.length > 20) {
+            handleSystemMessage(`Username too long (max 20 characters)`);
+            return;
+          }
+
+          setUsername(newName);
+          handleSystemMessage(`Username changed to ${newName}`);
         } else {
           setActiveView('nick');
         }
@@ -394,8 +452,46 @@ const App = ({ initialUsername, initialTopic }) => {
         }
         break;
 
+      case 'accept':
+        if (args.length > 0) {
+          // Call the acceptFileTransfer function from useFileTransfer
+          if (typeof acceptFileTransfer === 'function') {
+            const transferId = args[0];
+            const success = acceptFileTransfer(transferId);
+
+            if (!success) {
+              handleSystemMessage(`Failed to accept file transfer. Use /transfers to see available transfers.`);
+            }
+          } else {
+            handleSystemMessage(`File transfer acceptance not available`);
+          }
+        } else {
+          handleSystemMessage(`Usage: /accept <transfer-id>`);
+          handleSystemMessage(`Use /transfers to see available transfers.`);
+        }
+        break;
+
       case 'peers':
         handleSystemMessage(`Connected peers: ${peerCount}`);
+
+        // Add more detailed peer information if available
+        if (currentRoom && swarms.has(currentRoom.topic)) {
+          const roomSwarm = swarms.get(currentRoom.topic);
+          if (roomSwarm.connections && roomSwarm.connections.size > 0) {
+            handleSystemMessage(`Peer details:`);
+
+            let index = 1;
+            for (const peer of roomSwarm.connections) {
+              try {
+                const peerId = b4a.toString(peer.remotePublicKey, 'hex').slice(0, 8);
+                handleSystemMessage(`${index}. Peer ${peerId}`);
+                index++;
+              } catch (err) {
+                console.error(`Error getting peer details: ${err.message}`);
+              }
+            }
+          }
+        }
         break;
 
       case 'transfers':
@@ -409,7 +505,7 @@ const App = ({ initialUsername, initialTopic }) => {
               ? Math.round((transfer.sentChunks / transfer.totalChunks) * 100)
               : Math.round((transfer.receivedChunks / transfer.totalChunks) * 100);
 
-            handleSystemMessage(`${shortId} - ${transfer.type === 'upload' ? 'Upload' : 'Download'}: ${transfer.filename} (${progress}%)`);
+            handleSystemMessage(`${shortId} - ${transfer.type === 'upload' ? 'Upload' : 'Download'}: ${transfer.filename} (${progress}%, ${transfer.status})`);
           }
         }
         break;
@@ -417,6 +513,19 @@ const App = ({ initialUsername, initialTopic }) => {
       case 'topic':
         if (currentRoom) {
           handleSystemMessage(`Room topic: ${currentRoom.topic}`);
+
+          try {
+            // Copy to clipboard
+            copyToClipboard(currentRoom.topic)
+              .then(() => {
+                handleSystemMessage(`Topic copied to clipboard`);
+              })
+              .catch(err => {
+                console.error(`Error copying to clipboard: ${err.message}`);
+              });
+          } catch (err) {
+            console.error(`Error with topic command: ${err.message}`);
+          }
         } else {
           handleSystemMessage("Not in a room");
         }
@@ -441,6 +550,13 @@ const App = ({ initialUsername, initialTopic }) => {
       case 'room':
         if (args.length > 0) {
           const roomName = args.join(' ');
+
+          // Validate room name
+          if (!roomName.trim()) {
+            handleSystemMessage(`Room name cannot be empty`);
+            return;
+          }
+
           const newRoom = createRoom(roomName);
 
           if (newRoom) {
@@ -455,9 +571,9 @@ const App = ({ initialUsername, initialTopic }) => {
 
       default:
         handleSystemMessage(`Unknown command: ${command}`);
+        handleSystemMessage(`Type /help to see available commands`);
     }
   };
-
   // Handle menu selection
   const handleMenuSelect = ({ value }) => {
     switch (value) {

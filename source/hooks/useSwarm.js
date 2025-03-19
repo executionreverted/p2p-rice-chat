@@ -1,9 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import Hyperswarm from 'hyperswarm';
 import b4a from 'b4a';
 import crypto from 'crypto';
 
-export function useSwarm({ username, onMessage, onSystem }) {
+// Create the context
+const SwarmContext = createContext(null);
+
+// Custom hook to use the context
+export function useSwarmContext() {
+  const context = useContext(SwarmContext);
+  if (!context) {
+    throw new Error('useSwarmContext must be used within a SwarmProvider');
+  }
+  return context;
+}
+
+// Provider component
+export function SwarmProvider({ children, username, onMessage, onSystem }) {
   // Map to store all swarms by room topic - use useRef to maintain persistent references
   const swarmsRef = useRef(new Map());
 
@@ -135,7 +148,9 @@ export function useSwarm({ username, onMessage, onSystem }) {
 
     // Update peer count
     updatePeerCount(roomData.topic);
-
+    swarm.on('update', () => {
+      updatePeerCount(roomData, roomData.topic)
+    })
     // Create a unique ID for this peer connection
     peer.connectionId = crypto.randomBytes(4).toString('hex');
 
@@ -185,18 +200,23 @@ export function useSwarm({ username, onMessage, onSystem }) {
 
   // Update peer count for a specific room
   const updatePeerCount = (topicHex) => {
-    if (swarmsRef.current.has(topicHex)) {
-      const swarm = swarmsRef.current.get(topicHex);
-      const count = swarm.connections.size;
+    try {
+      if (swarmsRef.current.has(topicHex)) {
+        const swarm = swarmsRef.current.get(topicHex);
+        const count = swarm.connections.size;
 
-      // Only update state if this is the current room
-      if (currentRoom && currentRoom.topic === topicHex) {
-        setPeerCount(count);
+        // Only update state if this is the current room
+        if (currentRoom && currentRoom.topic === topicHex) {
+          setPeerCount(count);
+        }
+
+        return count;
       }
-
-      return count;
+      return 1;
+    } catch (err) {
+      console.error(`[Swarm] Error updating peer count: ${err.message}`);
+      return 1;
     }
-    return 0;
   };
 
   // Send message to all peers in the current room
@@ -248,7 +268,8 @@ export function useSwarm({ username, onMessage, onSystem }) {
     };
   }, []);
 
-  return {
+  // The context value
+  const value = {
     swarms: swarmsRef.current,
     currentRoom,
     isConnected,
@@ -259,4 +280,49 @@ export function useSwarm({ username, onMessage, onSystem }) {
     sendToCurrentRoom,
     getRoomPeerCount: updatePeerCount
   };
+
+  return (
+    <SwarmContext.Provider value={value}>
+      {children}
+    </SwarmContext.Provider>
+  );
 }
+
+// Example usage in App.js:
+/*
+import { SwarmProvider, useSwarmContext } from './hooks/SwarmContext';
+
+const App = ({ initialUsername, initialTopic }) => {
+	// Message handling functions
+	const handleSystemMessage = (text) => {
+		// Your system message handling logic
+	};
+
+	const handleIncomingMessage = (roomTopic, username, text) => {
+		// Your message handling logic
+	};
+
+	return (
+		<SwarmProvider
+			username={username}
+			onMessage={handleIncomingMessage}
+			onSystem={handleSystemMessage}
+		>
+			<YourComponents />
+		</SwarmProvider>
+	);
+};
+
+// Inside any component that needs swarm functionality:
+const YourComponent = () => {
+	const {
+		currentRoom,
+		peerCount,
+		sendToCurrentRoom,
+		joinRoom,
+		// etc.
+	} = useSwarmContext();
+
+	// Now you can use these functions and state
+}
+*/
