@@ -1,40 +1,71 @@
-import React, { useState, useEffect } from 'react';
+// components/CommandMenu.js
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 
-const CommandMenu = ({ onSelect, isFocused }) => {
+// Accept compact mode as a prop instead of using the hook directly
+const CommandMenu = ({ onSelect, isFocused, compact = false }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [highlightedItem, setHighlightedItem] = useState(null);
 
-  const items = [
-    { label: 'Help', value: 'help' },
-    { label: 'Change Username', value: 'nick' },
-    { label: 'Share File', value: 'share' },
-    { label: 'Show Peers', value: 'peers' },
-    { label: 'Show Transfers', value: 'transfers' },
-    { label: 'Clear Messages', value: 'clear' },
-    { label: 'Generate Invite', value: 'invite' },
-    { label: 'Join Room', value: 'join' },
-    { label: 'Create Room', value: 'room' },
-    { label: 'Exit', value: 'exit' },
-  ];
+  // Short labels for compact mode
+  const shortLabels = {
+    help: 'Help',
+    nick: 'Username',
+    share: 'Share',
+    peers: 'Peers',
+    transfers: 'Transfers',
+    clear: 'Clear',
+    invite: 'Invite',
+    join: 'Join',
+    room: 'New Room',
+    exit: 'Exit'
+  };
 
-  // Handle keyboard navigation for better selection experience
+  // Use useMemo to avoid recreating items array on every render
+  const items = useMemo(() => {
+    const baseItems = [
+      { label: 'Help', value: 'help' },
+      { label: 'Change Username', value: 'nick' },
+      { label: 'Share File', value: 'share' },
+      { label: 'Show Peers', value: 'peers' },
+      { label: 'Show Transfers', value: 'transfers' },
+      { label: 'Clear Messages', value: 'clear' },
+      { label: 'Generate Invite', value: 'invite' },
+      { label: 'Join Room', value: 'join' },
+      { label: 'Create Room', value: 'room' },
+      { label: 'Exit', value: 'exit' },
+    ];
+
+    // For compact mode, use shorter labels
+    if (compact) {
+      return baseItems.map(item => ({
+        ...item,
+        label: shortLabels[item.value] || item.label
+      }));
+    }
+
+    return baseItems;
+  }, [compact]); // Only recalculate when compact changes
+
+  // Handle keyboard navigation
   useInput((input, key) => {
     if (!isFocused) return;
 
     if (key.return) {
-      // console.log(items[selectedIndex])
       onSelect(items[selectedIndex]);
     }
   });
 
   // Update highlighted item when selected index changes
+  // Use a proper dependency array to prevent infinite updates
   useEffect(() => {
-    setHighlightedItem(items[selectedIndex]);
-  }, [selectedIndex]);
+    if (items[selectedIndex]) {
+      setHighlightedItem(items[selectedIndex]);
+    }
+  }, [selectedIndex, items]);
 
-  // Custom item renderer for better visual feedback
+  // Custom item renderer
   const itemComponent = ({ isSelected, label }) => (
     <Box>
       <Text color={isSelected ? 'green' : 'white'}>
@@ -43,7 +74,7 @@ const CommandMenu = ({ onSelect, isFocused }) => {
     </Box>
   );
 
-  const indicatorComponent = ({ isSelected, label }) => (
+  const indicatorComponent = ({ isSelected }) => (
     <Box>
       <Text color={isSelected ? 'green' : 'white'}>
         {isSelected ? '››' : '  '}
@@ -60,9 +91,9 @@ const CommandMenu = ({ onSelect, isFocused }) => {
       alignItems={"flex-start"}
       overflowY="scroll"
       width={"100%"}
-      padding={1}
+      padding={compact ? 0 : 1}
     >
-      <Box paddingRight={1} backgroundColor="blue" width="100%">
+      <Box paddingRight={compact ? 0 : 1} backgroundColor="blue" width="100%">
         <Text bold color="white">Menu</Text>
       </Box>
       <SelectInput

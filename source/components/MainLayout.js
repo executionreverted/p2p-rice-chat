@@ -1,3 +1,4 @@
+// components/MainLayout.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput, useApp, useFocus } from 'ink';
 import StatusBar from './StatusBar.js';
@@ -6,16 +7,17 @@ import RoomManager from './RoomManager.js';
 import CommandMenu from './CommandMenu.js';
 import OnlineUsers from './OnlineUsers.js';
 import TransferStatus from './TransferStatus.js';
+import HelpOverlay from './HelpOverlay.js';
 import { useFocusManager, FOCUS_AREAS } from '../hooks/useFocusManager.js';
 import { useSwarmContext } from '../hooks/useSwarm.js';
 import { useFileTransferContext } from '../hooks/useFileTransfer.js';
 import { useMessageContext } from '../hooks/useMessages.js';
+import { useResponsiveLayout } from '../hooks/useResponsiveLayout.js';
 import { formatBytes, expandPath, copyToClipboard } from '../utils/index.js';
-import crypto from 'crypto';
-import b4a from 'b4a';
 
 const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
   const { exit } = useApp();
+  const layout = useResponsiveLayout();
 
   // Initialize focus management
   const focusManager = useFocusManager(FOCUS_AREAS.CHAT_INPUT);
@@ -24,6 +26,8 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
   // UI state
   const [activeView, setActiveView] = useState('chat'); // chat, nick, share, join, newroom
   const [tempInput, setTempInput] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const [forceMiniMode, setForceMiniMode] = useState(false);
 
   // Room state
   const [rooms, setRooms] = useState([]);
@@ -104,50 +108,6 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
     }
   }, [rooms, joinRoom, focusManager, inputFocus]);
 
-  // Effect to initialize with a default room
-  useEffect(() => {
-    const initRoom = async () => {
-      try {
-        let roomToJoin;
-
-        if (initialTopic) {
-          // Join existing room from initialTopic
-          roomToJoin = {
-            name: "Joined Room",
-            description: "Room joined from topic",
-            topic: initialTopic
-          };
-        } else {
-          // Create a default room if no initial topic
-          const newRoom = createRoom("Main Room");
-          if (newRoom) {
-            roomToJoin = newRoom;
-          } else {
-            return;
-          }
-        }
-
-        // Join the room
-        const joined = await joinRoom(roomToJoin);
-
-        if (joined) {
-          // Add to room list
-          addRoom(roomToJoin);
-        } else {
-          addSystemMessage("", "Failed to join initial room. Creating a new one...");
-          const newRoom = createRoom("Main Room");
-          if (newRoom) {
-            addRoom(newRoom);
-          }
-        }
-      } catch (err) {
-        addSystemMessage("", `Error initializing room: ${err.message}`);
-      }
-    };
-
-    initRoom();
-  }, []);
-
   // Effect to update room list when currentRoom changes
   useEffect(() => {
     if (currentRoom) {
@@ -163,6 +123,7 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
 
   // Generate an invitation code for the current room
   const generateInviteCode = useCallback(() => {
+    console.log('WORKS!')
     try {
       // Check if we have access to room information
       if (!currentRoom) {
@@ -196,9 +157,11 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
       addSystemMessage(currentRoom?.topic || "", `Error generating invite: ${err.message}`);
       return null;
     }
-  }, [currentRoom, addSystemMessage, copyToClipboard]);
+  }, [currentRoom]);
 
-  // Join a room from invitation code
+
+
+  // Join a room from invitation code (continued)
   const joinRoomFromInvite = useCallback((inviteCode) => {
     try {
       if (!inviteCode || typeof inviteCode !== 'string') {
@@ -261,6 +224,7 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
         addSystemMessage("", '/rooms - Toggle room drawer');
         addSystemMessage("", '/focus [area] - Focus a specific area (rooms, input, users)');
         addSystemMessage("", '/tab - Cycle focus through components');
+        addSystemMessage("", 'Press F1 or Ctrl+H for visual help');
         break;
 
       case 'clear':
@@ -478,6 +442,12 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
         addSystemMessage("", `Focused: ${focusManager.focusedArea}`);
         break;
 
+      case 'mini':
+        // Toggle mini mode
+        setForceMiniMode(!forceMiniMode);
+        addSystemMessage("", `Mini mode ${forceMiniMode ? 'disabled' : 'enabled'}`);
+        break;
+
       default:
         addSystemMessage("", `Unknown command: ${command}`);
         addSystemMessage("", `Type /help to see available commands`);
@@ -486,14 +456,14 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
     currentRoom, addSystemMessage, clearRoomMessages, leaveRoom, exit,
     setUsername, shareFile, acceptFileTransfer, peerCount, swarms, transfers,
     copyToClipboard, generateInviteCode, joinRoomFromInvite, createRoom,
-    addRoom, focusManager, showRooms, inputFocus, menuFocus
+    addRoom, focusManager, showRooms, inputFocus, menuFocus, forceMiniMode
   ]);
 
   // Handle menu selection
   const handleMenuSelect = useCallback(({ value }) => {
     switch (value) {
       case 'help':
-        handleCommand('help', []);
+        setShowHelp(true);
         break;
       case 'nick':
         setActiveView('nick');
@@ -528,10 +498,7 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
     focusManager.setShowMenu(false);
     focusManager.changeFocus(FOCUS_AREAS.CHAT_INPUT);
     inputFocus.focus();
-  }, [
-    handleCommand, clearRoomMessages, currentRoom, generateInviteCode,
-    exit, focusManager, inputFocus
-  ]);
+  }, []);
 
   // Handle chat submission
   const handleChatSubmit = useCallback((message) => {
@@ -612,6 +579,18 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
 
   // Configure keyboard navigation
   useInput((input, key) => {
+    // Close help overlay with ESC
+    if (showHelp && key.escape) {
+      setShowHelp(false);
+      return;
+    }
+
+    // Show help with F1 or Ctrl+H
+    if ((key.shift && input == "H") || (key.ctrl && input === 'H')) {
+      setShowHelp(prev => !prev);
+      return;
+    }
+
     // Handle Tab key for focus cycling
     if (key.tab && !key.shift) {
       focusManager.cycleFocus();
@@ -650,14 +629,52 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
       }
     }
 
-    // Focus the room drawer with Ctrl+R
-    if (key.ctrl && input === 'r') {
-      focusManager.changeFocus(FOCUS_AREAS.ROOMS);
-      focusManager.setShowRooms(true);
+    // Toggle UI sections with Alt key combinations
+    if (key.alt) {
+      // Alt+R to toggle rooms sidebar
+      if (input === 'r') {
+        focusManager.setShowRooms(!showRooms);
+        if (!showRooms) {
+          // If showing rooms, also focus on it
+          focusManager.changeFocus(FOCUS_AREAS.ROOMS);
+        } else {
+          // If hiding rooms, focus back on chat
+          focusManager.changeFocus(FOCUS_AREAS.CHAT_INPUT);
+        }
+        return;
+      }
+
+      // Alt+M to toggle menu/users
+      if (input === 'm') {
+        focusManager.setShowMenu(!showMenu);
+        if (showMenu) {
+          focusManager.changeFocus(FOCUS_AREAS.MENU);
+        } else {
+          focusManager.changeFocus(FOCUS_AREAS.CHAT_INPUT);
+        }
+        return;
+      }
+
+      // Alt+0 to toggle mini mode
+      if (input === '0') {
+        setForceMiniMode(prev => !prev);
+        addSystemMessage("", `Mini mode ${forceMiniMode ? 'disabled' : 'enabled'}`);
+        return;
+      }
+
+      // Alt+1 through Alt+9 to quickly switch rooms
+      const roomNumber = parseInt(input);
+      if (!isNaN(roomNumber) && roomNumber >= 1 && roomNumber <= 9) {
+        const roomIndex = roomNumber - 1;
+        if (roomIndex < rooms.length) {
+          handleRoomSelect(roomIndex);
+          return;
+        }
+      }
     }
 
-    // Focus the room drawer with Shift+C (custom shortcut)
-    if (key.shift && input === 'C') {
+    // Focus the room drawer with Ctrl+R
+    if (key.ctrl && input === 'r') {
       focusManager.changeFocus(FOCUS_AREAS.ROOMS);
       focusManager.setShowRooms(true);
     }
@@ -689,40 +706,30 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
     }
   });
 
-  return (
-    <Box
-      flexDirection="column"
-      width="100%"
-      height="100%"
-      padding={0}
-    >
-      <StatusBar
-        peerCount={peerCount}
-        username={initialUsername}
-        room={currentRoom?.name || "Not connected"}
-      />
+  // Determine if we should use mini mode
+  const isInMiniMode = forceMiniMode || layout.miniMode;
+  if (showHelp) return <HelpOverlay show={showHelp} onClose={() => setShowHelp(false)} terminalSize={{ columns: layout.columns, rows: layout.rows }} layoutMode={layout.mode} />
 
-      <Box
-        flexDirection="row"
-        flex={1}
-        minHeight={process.stdout.rows - 7} // Use terminal rows minus space for header/footer
-      >
-        {showRooms && (
-          <RoomManager
-            rooms={rooms}
-            activeRoomIndex={activeRoomIndex}
-            onRoomSelect={handleRoomSelect}
-            isFocused={focusedArea === FOCUS_AREAS.ROOMS}
-          />
-        )}
 
-        <Box
-          flexDirection="column"
-          flex={1}
-          width={"100%"}
-          height="100%"
-        >
+  // Render mini mode for very small terminals
+  if (isInMiniMode) {
+    return (
+      <Box flexDirection="column" width="100%" height="100%">
+        {/* Super compact header */}
+        <Box borderStyle="single" borderColor="cyan">
+          <Text color="green">{initialUsername}</Text>
+          <Text> | </Text>
+          <Text color="cyan">
+            {currentRoom ? (currentRoom.name?.length > 8 ? `${currentRoom.name.slice(0, 7)}…` : currentRoom.name) : "No Room"}
+          </Text>
+          <Text> | </Text>
+          <Text color={peerCount > 0 ? "green" : "blue"}>{peerCount}p</Text>
+        </Box>
+
+        {/* Main chat area */}
+        <Box flexDirection="column" flex={1}>
           <ChatArea
+            layout={layout}
             activeView={activeView}
             focusedArea={focusedArea}
             messages={getRoomMessages(currentRoom?.topic)}
@@ -736,39 +743,107 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
           />
         </Box>
 
-        {showMenu ? (
+      </Box>
+    );
+  }
+
+  // Render normal mode for standard terminals
+  // Inside MainLayout.js render function for the normal layout
+
+  return (
+    <Box
+      flexDirection="column"
+      width={layout.columns}
+      height={layout.rows}
+      padding={0}
+    >
+      <StatusBar
+        peerCount={peerCount}
+        username={initialUsername}
+        room={currentRoom?.name || "Not connected"}
+      />
+
+      <Box
+        flexDirection="row"
+        height={layout.rows - layout.statusHeight - 2} // Subtract status and help bar heights
+      >
+        {showRooms && layout.showRooms && (
           <Box
-            flexDirection="column"
-            width="25%"
+            width={layout.roomsWidth}
             height="100%"
-            marginLeft={1}
+            marginRight={1}
           >
-            <CommandMenu
-              onSelect={handleMenuSelect}
-              isFocused={focusedArea === FOCUS_AREAS.MENU}
+            <RoomManager
+              joinRoom={joinRoom}
+              setActiveRoomIndex={setActiveRoomIndex}
+              rooms={rooms}
+              activeRoomIndex={activeRoomIndex}
+              onRoomSelect={handleRoomSelect}
+              isFocused={focusedArea === FOCUS_AREAS.ROOMS}
             />
-            <TransferStatus transfers={transfers} version={transfersVersion} />
           </Box>
-        ) : (
+        )}
+
+        <Box
+          width={layout.columns - (showRooms ? layout.roomsWidth + 1 : 0) - (layout.showUsers ? layout.usersWidth + 1 : 0)}
+          height="100%"
+        >
+          <ChatArea
+            activeView={activeView}
+            focusedArea={focusedArea}
+            messages={getRoomMessages(currentRoom?.topic)}
+            messagesVersion={messagesVersion}
+            input={tempInput}
+            setInput={setTempInput}
+            onSubmit={handleChatSubmit}
+            onTempSubmit={handleTempSubmit}
+            onCommandSubmit={handleCommand}
+            isFocused={focusedArea === FOCUS_AREAS.CHAT_INPUT}
+            layout={layout}
+          />
+        </Box>
+
+        {layout.showUsers && (
           <Box
-            flexDirection="column"
-            width="25%"
+            width={layout.usersWidth}
             height="100%"
             marginLeft={1}
           >
-            <OnlineUsers
-              users={onlineUsers}
-              isFocused={focusedArea === FOCUS_AREAS.USERS}
-            />
+            {showMenu ? (
+              <CommandMenu
+                onSelect={handleMenuSelect}
+                isFocused={focusedArea === FOCUS_AREAS.MENU}
+                compact={layout.compact}
+                width={layout.usersWidth}
+              />
+            ) : (
+              <OnlineUsers
+                users={onlineUsers}
+                isFocused={focusedArea === FOCUS_AREAS.USERS}
+                compact={layout.compact}
+                width={layout.usersWidth}
+              />
+            )}
+
+            {layout.showTransfers && !layout.compact && transfers.size > 0 && (
+              <TransferStatus
+                transfers={transfers}
+                version={transfersVersion}
+                compact={layout.compact}
+                width={layout.usersWidth}
+              />
+            )}
           </Box>
         )}
       </Box>
 
-      <Box padding={1} borderStyle="single" borderColor="gray">
-        <Text color="gray">Tab/Shift+Tab: Cycle Focus | ESC: Menu | Ctrl+R: Focus Rooms | ↑/↓: Navigate | Enter: Select</Text>
-      </Box>
-    </Box>
-  );
-};
+      <Text color="gray" wrap="truncate">
+        {layout.compact
+          ? "Tab: Cycle | ESC: Menu | Alt+R: Rooms"
+          : "Tab/Shift+Tab: Cycle Focus | ESC: Menu | Alt+R: Rooms | Alt+M: Menu | F1: Help"}
+      </Text>
 
+    </Box>
+  )
+}
 export default MainLayout;

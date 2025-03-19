@@ -1,12 +1,16 @@
+// components/TransferStatus.js
 import React from 'react';
 import { Box, Text } from 'ink';
+import { useResponsiveLayout } from '../hooks/useResponsiveLayout.js';
 
 const TransferStatus = ({ transfers, version }) => {
+  const layout = useResponsiveLayout();
+  const compact = layout.compact;
+
   // Use the version prop to trigger re-renders
 
   // Handle case where transfers is undefined or not a Map
   if (!transfers || typeof transfers.entries !== 'function') {
-    console.error('TransferStatus: transfers is not a Map', transfers);
     return null;
   }
 
@@ -27,7 +31,6 @@ const TransferStatus = ({ transfers, version }) => {
       // Make sure progress is between 0 and 100
       return `${Math.max(0, Math.min(100, progress))}%`;
     } catch (err) {
-      console.error('Error formatting progress:', err);
       return 'Error';
     }
   };
@@ -43,9 +46,29 @@ const TransferStatus = ({ transfers, version }) => {
     }
   };
 
+  // Format filename based on available space
+  const formatFilename = (filename) => {
+    if (!filename) return 'Unknown';
+
+    const maxLength = compact ? 15 : 25;
+    if (filename.length > maxLength) {
+      return `${filename.slice(0, maxLength - 3)}...`;
+    }
+
+    return filename;
+  };
+
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor="blue" marginTop={1}>
-      <Box padding={1}>
+
+    <Box
+      flexDirection="column"
+      borderStyle="single"
+      borderColor="blue"
+      marginTop={1}
+      // Set a maximum height to prevent it from taking too much space
+      height={Math.min(10, transferArray.length * 4 + 2)}
+    >
+      <Box padding={compact ? 0 : 1}>
         <Text bold>Active Transfers</Text>
       </Box>
       {transferArray.map(([id, transfer]) => {
@@ -55,17 +78,14 @@ const TransferStatus = ({ transfers, version }) => {
         const progress = formatProgress(transfer);
 
         return (
-          <Box key={id} flexDirection="column" padding={1} borderStyle="single" borderColor="gray">
+          <Box key={id} flexDirection="column" padding={compact ? 0 : 1} borderStyle="single" borderColor="gray">
             <Text>
-              {transfer.type === 'upload' ? 'Upload: ' : 'Download: '}
-              <Text color="cyan">{transfer.filename || 'Unknown'}</Text>
+              {transfer.type === 'upload' ? 'Up: ' : 'Down: '}
+              <Text color="cyan">{formatFilename(transfer.filename)}</Text>
             </Text>
-            <Text>ID: {shortId}</Text>
+            {!compact && <Text>ID: {shortId}</Text>}
             <Text>
-              Status: <Text color={getStatusColor(transfer.status)}>{transfer.status || 'unknown'}</Text>
-            </Text>
-            <Text>
-              Progress: <Text color="green">{progress}</Text>
+              <Text color={getStatusColor(transfer.status)}>{progress}</Text>
             </Text>
           </Box>
         );

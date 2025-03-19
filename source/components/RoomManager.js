@@ -1,6 +1,8 @@
+// components/RoomManager.js
 import React, { useEffect, useCallback } from 'react';
 import { Box } from 'ink';
 import RoomDrawer from './RoomDrawer.js';
+import { useResponsiveLayout } from '../hooks/useResponsiveLayout.js';
 
 /**
  * RoomManager Component
@@ -18,6 +20,8 @@ const RoomManager = ({
   currentRoom,
   width = "20%"
 }) => {
+  const layout = useResponsiveLayout();
+
   // Add a room to the list
   const addRoom = useCallback((roomData) => {
     if (!roomData || !roomData.topic) {
@@ -67,14 +71,14 @@ const RoomManager = ({
       }
     }
   }, [currentRoom, initialTopic, rooms, addRoom]);
-
   return (
     <RoomDrawer
       rooms={rooms}
       activeRoomIndex={activeRoomIndex}
       onRoomSelect={handleRoomSelect}
       isFocused={isFocused}
-      width={width}
+      width={layout.roomsWidth} // Pass numerical width from layout
+      compact={layout.compact}
     />
   );
 };

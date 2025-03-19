@@ -1,6 +1,8 @@
+// components/InputArea.js
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
+import { useResponsiveLayout } from '../hooks/useResponsiveLayout.js';
 
 // Command history feature
 const useCommandHistory = (initialHistory = []) => {
@@ -46,6 +48,7 @@ const useCommandHistory = (initialHistory = []) => {
 
 // Enhanced InputArea component with interactive auto-completion
 const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availableCommands = [] }) => {
+  const layout = useResponsiveLayout();
   const [inputValue, setInputValue] = useState(value || '');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -184,6 +187,22 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
     }
   });
 
+  // Mini mode for very small terminals
+  if (layout.miniMode) {
+    return (
+      <Box width="100%">
+        <Text>›</Text>
+        <TextInput
+          value={inputValue}
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+          placeholder={placeholder || ">"}
+          focus={isFocused}
+        />
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" width="100%">
       <Box
@@ -191,6 +210,7 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
         borderColor={isFocused ? "green" : "gray"}
         width="100%"
         flexDirection="row"
+        padding={layout.compact ? 0 : 1}
       >
         <Text>›</Text>
         <Box flexGrow={1}>
@@ -213,8 +233,8 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
             flexDirection="column"
             width={20}
             position="absolute"
-            bottom={2}
-            left={2}
+            bottom={layout.compact ? 1 : 2}
+            left={layout.compact ? 1 : 2}
             backgroundColor="black"
             zIndex={10}
           >
@@ -227,8 +247,8 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
                 {suggestion}
               </Text>
             ))}
-            {suggestions.length > 0 && (
-              <Box padding={1} borderStyle="single" borderColor="gray">
+            {suggestions.length > 0 && !layout.miniMode && (
+              <Box padding={layout.compact ? 0 : 1} borderStyle="single" borderColor="gray">
                 <Text dim>↑/↓: Navigate • Enter: Select</Text>
               </Box>
             )}

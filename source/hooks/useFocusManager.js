@@ -62,7 +62,7 @@ export function useFocusManager(initialFocus = FOCUS_AREAS.CHAT_INPUT) {
     }
 
     return newMenuState;
-  }, [showMenu]);
+  }, [showRooms]);
 
   // Toggle rooms visibility
   const toggleRooms = useCallback(() => {

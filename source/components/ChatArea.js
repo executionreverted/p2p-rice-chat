@@ -17,7 +17,8 @@ const ChatArea = ({
   onSubmit,
   onTempSubmit,
   onCommandSubmit,
-  isFocused
+  isFocused,
+  layout
 }) => {
   // Local state for chat input (separate from temp input)
   const [chatInput, setChatInput] = useState('');
@@ -104,6 +105,7 @@ const ChatArea = ({
         width="100%"
       >
         <ChatMessages
+          layout={layout}
           messages={messages}
           version={messagesVersion}
         />
