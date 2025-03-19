@@ -83,8 +83,7 @@ export function useResponsiveLayout() {
 
     // Safety margins to prevent overflow
     const safeColumns = Math.max(columns - 2, 40); // 2 columns safety margin
-    const safeRows = Math.max(rows - 1, 15);       // 1 row safety margin
-
+    const safeRows = Math.max(rows - 1, 15);
     // Determine layout mode based on available space
     let mode = LAYOUTS.NORMAL;
     if (columns < BREAKPOINTS.MINI.columns || rows < BREAKPOINTS.MINI.rows) {

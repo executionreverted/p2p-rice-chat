@@ -1,8 +1,9 @@
 // components/InputArea.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout.js';
+import debounce from 'lodash.debounce';
 
 // Command history feature
 const useCommandHistory = (initialHistory = []) => {
@@ -56,6 +57,13 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [isNavigatingSuggestions, setIsNavigatingSuggestions] = useState(false);
 
+  // Performance optimization: Store all commands in a ref to avoid re-creating on every render
+  const commandsRef = useRef([...new Set([
+    'help', 'exit', 'quit', 'nick', 'name', 'share',
+    'peers', 'transfers', 'topic', 'clear', 'invite',
+    'join', 'room', ...availableCommands
+  ])]);
+
   const { addToHistory, getPreviousCommand, getNextCommand } = useCommandHistory();
 
   // Keep local and parent state in sync
@@ -63,44 +71,54 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
     setInputValue(value || '');
   }, [value]);
 
+  // Debounced suggestion generator to avoid excessive re-renders when typing quickly
+  const generateSuggestions = useCallback(
+    debounce((inputText) => {
+      if (inputText.startsWith('/')) {
+        const commandPart = inputText.slice(1).toLowerCase();
+
+        // Filter commands that match the input
+        const matchingCommands = commandsRef.current.filter(cmd =>
+          cmd.toLowerCase().startsWith(commandPart)
+        );
+
+        setSuggestions(matchingCommands);
+        suggestionsRef.current = matchingCommands;
+        setShowSuggestions(matchingCommands.length > 0);
+        setSelectedSuggestion(0);
+        setIsNavigatingSuggestions(false);
+      } else {
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 50), // 100ms debounce delay
+    []
+  );
+
   // Handle input changes
   const handleChange = (newValue) => {
-    if (!isFocused) return
+    if (!isFocused) return;
+
+    // Update local state immediately for responsive feel
     setInputValue(newValue);
+
+    // Pass to parent
     onChange(newValue);
 
-    // Generate suggestions for commands
-    if (newValue.startsWith('/')) {
-      const commandPart = newValue.slice(1).toLowerCase();
-
-      // Default commands
-      const defaultCommands = [
-        'help', 'exit', 'quit', 'nick', 'name', 'share',
-        'peers', 'transfers', 'topic', 'clear', 'invite',
-        'join', 'room'
-      ];
-
-      // Combine with any additional commands
-      const allCommands = [...new Set([...defaultCommands, ...availableCommands])];
-
-      // Filter commands that match the input
-      const matchingCommands = allCommands.filter(cmd =>
-        cmd.toLowerCase().startsWith(commandPart)
-      );
-
-      setSuggestions(matchingCommands);
-      suggestionsRef.current = matchingCommands;
-      setShowSuggestions(matchingCommands.length > 0);
-      setSelectedSuggestion(0);
-      setIsNavigatingSuggestions(false);
-    } else {
-      setSuggestions([]);
-      setShowSuggestions(false);
-    }
+    // Generate suggestions with debounce
+    generateSuggestions(newValue);
   };
 
-  // Handle input submission
+  // Handle input submission with rate limiting
+  const lastSubmitTime = useRef(0);
   const handleSubmit = (submitValue) => {
+    // Basic rate limiting to prevent accidental double submissions
+    const now = Date.now();
+    if (now - lastSubmitTime.current < 100) {
+      return;
+    }
+    lastSubmitTime.current = now;
+
     // If navigating suggestions and pressing enter, use the selected suggestion
     if (isNavigatingSuggestions && showSuggestions && suggestions.length > 0) {
       const suggestion = suggestions[selectedSuggestion];
@@ -126,13 +144,31 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
     onSubmit(submitValue);
   };
 
+  // Navigation state refs to avoid recreating handlers
+  const navigationState = useRef({
+    suggestions,
+    selectedSuggestion,
+    showSuggestions,
+    isNavigatingSuggestions
+  });
+
+  // Update ref when state changes
+  useEffect(() => {
+    navigationState.current = {
+      suggestions,
+      selectedSuggestion,
+      showSuggestions,
+      isNavigatingSuggestions
+    };
+  }, [suggestions, selectedSuggestion, showSuggestions, isNavigatingSuggestions]);
+
   // Use Ink's useInput hook for better key handling
   useInput((input, key) => {
     if (!isFocused) return;
 
     // Tab completion
-    if (key.tab && showSuggestions && suggestions.length > 0) {
-      const suggestion = suggestions[selectedSuggestion];
+    if (key.tab && navigationState.current.showSuggestions && navigationState.current.suggestions.length > 0) {
+      const suggestion = navigationState.current.suggestions[navigationState.current.selectedSuggestion];
       const newValue = `/${suggestion} `;
       setInputValue(newValue);
       onChange(newValue);
@@ -142,9 +178,9 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
 
     // Up arrow for navigating suggestions or command history
     if (key.upArrow) {
-      if (showSuggestions) {
+      if (navigationState.current.showSuggestions) {
         setSelectedSuggestion(
-          (selectedSuggestion + suggestions.length - 1) % suggestions.length
+          (selectedSuggestion + navigationState.current.suggestions.length - 1) % navigationState.current.suggestions.length
         );
         setIsNavigatingSuggestions(true);
       } else {
@@ -158,9 +194,9 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
 
     // Down arrow for navigating suggestions or command history
     if (key.downArrow) {
-      if (showSuggestions) {
+      if (navigationState.current.showSuggestions) {
         setSelectedSuggestion(
-          (selectedSuggestion + 1) % suggestions.length
+          (selectedSuggestion + 1) % navigationState.current.suggestions.length
         );
         setIsNavigatingSuggestions(true);
       } else {
@@ -171,8 +207,9 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
     }
 
     // Enter key to select suggestion or submit input
-    if (key.return && isNavigatingSuggestions && showSuggestions && suggestions.length > 0) {
-      const suggestion = suggestions[selectedSuggestion];
+    if (key.return && navigationState.current.isNavigatingSuggestions &&
+      navigationState.current.showSuggestions && navigationState.current.suggestions.length > 0) {
+      const suggestion = navigationState.current.suggestions[navigationState.current.selectedSuggestion];
       const newValue = `/${suggestion} `;
       setInputValue(newValue);
       onChange(newValue);
@@ -238,7 +275,7 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
             backgroundColor="black"
             zIndex={10}
           >
-            {suggestions.map((suggestion, index) => (
+            {suggestions.slice(0, 5).map((suggestion, index) => (
               <Text
                 key={suggestion}
                 backgroundColor={index === selectedSuggestion ? "blue" : undefined}
@@ -259,4 +296,4 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
   );
 };
 
-export default InputArea;
+export default React.memo(InputArea);

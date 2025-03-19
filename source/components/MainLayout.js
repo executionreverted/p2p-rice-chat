@@ -13,6 +13,7 @@ import { useSwarmContext } from '../hooks/useSwarm.js';
 import { useFileTransferContext } from '../hooks/useFileTransfer.js';
 import { useMessageContext } from '../hooks/useMessages.js';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout.js';
+
 import { formatBytes, expandPath, copyToClipboard } from '../utils/index.js';
 
 const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
@@ -101,10 +102,9 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
       joinRoom(selectedRoom);
 
       // Return focus to input after room selection
-      setTimeout(() => {
-        focusManager.changeFocus(FOCUS_AREAS.CHAT_INPUT);
-        inputFocus.focus();
-      }, 100);
+      focusManager.changeFocus(FOCUS_AREAS.CHAT_INPUT);
+      inputFocus.focus();
+
     }
   }, [rooms, joinRoom, focusManager, inputFocus]);
 
@@ -123,7 +123,6 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
 
   // Generate an invitation code for the current room
   const generateInviteCode = useCallback(() => {
-    console.log('WORKS!')
     try {
       // Check if we have access to room information
       if (!currentRoom) {
@@ -143,7 +142,6 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
       // Try to copy to clipboard
       copyToClipboard(inviteCode)
         .then(() => {
-          addSystemMessage(currentRoom.topic, "✓ Invitation code copied to clipboard!");
         })
         .catch(err => {
           addSystemMessage(currentRoom.topic, `Couldn't copy to clipboard: ${err.message}`);
@@ -154,10 +152,11 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
 
       return inviteCode;
     } catch (err) {
+      console.error('Error in generateInviteCode:', err);
       addSystemMessage(currentRoom?.topic || "", `Error generating invite: ${err.message}`);
       return null;
     }
-  }, [currentRoom]);
+  }, [currentRoom, addSystemMessage, copyToClipboard]);
 
 
 
@@ -453,10 +452,8 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
         addSystemMessage("", `Type /help to see available commands`);
     }
   }, [
-    currentRoom, addSystemMessage, clearRoomMessages, leaveRoom, exit,
-    setUsername, shareFile, acceptFileTransfer, peerCount, swarms, transfers,
-    copyToClipboard, generateInviteCode, joinRoomFromInvite, createRoom,
-    addRoom, focusManager, showRooms, inputFocus, menuFocus, forceMiniMode
+    currentRoom, peerCount, swarms, transfers,
+    inputFocus, menuFocus
   ]);
 
   // Handle menu selection
@@ -498,7 +495,7 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
     focusManager.setShowMenu(false);
     focusManager.changeFocus(FOCUS_AREAS.CHAT_INPUT);
     inputFocus.focus();
-  }, []);
+  }, [activeRoomIndex, currentRoom, showMenu]);
 
   // Handle chat submission
   const handleChatSubmit = useCallback((message) => {
@@ -569,6 +566,10 @@ const MainLayout = ({ initialUsername, setUsername, initialTopic }) => {
       joinRoomFromInvite(value);
     } else if (activeView === 'newroom' && value) {
       handleCommand('room', [value]);
+    }
+    else if (activeView === 'invite') {
+      // Call generateInviteCode when in invite view
+      generateInviteCode();
     }
 
     setActiveView('chat');
