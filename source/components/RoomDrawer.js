@@ -15,17 +15,27 @@ const RoomDrawer = ({
     setSelectedIndex(activeRoomIndex);
   }, [activeRoomIndex]);
 
-  // Handle keyboard navigation
+  // Handle keyboard navigation with circular navigation
   useInput((input, key) => {
-    if (!isFocused) return;
+    if (!isFocused || rooms.length === 0) return;
 
-    // Use arrow keys to navigate rooms
-    if (key.upArrow && selectedIndex > 0) {
-      setSelectedIndex(selectedIndex - 1);
+    // Use arrow keys to navigate rooms with circular navigation
+    if (key.upArrow) {
+      // When at the first item, go to the last item
+      if (selectedIndex === 0) {
+        setSelectedIndex(rooms.length - 1);
+      } else {
+        setSelectedIndex(selectedIndex - 1);
+      }
     }
 
-    if (key.downArrow && selectedIndex < rooms.length - 1) {
-      setSelectedIndex(selectedIndex + 1);
+    if (key.downArrow) {
+      // When at the last item, go back to the first item
+      if (selectedIndex === rooms.length - 1) {
+        setSelectedIndex(0);
+      } else {
+        setSelectedIndex(selectedIndex + 1);
+      }
     }
 
     // Use Enter to select a room
@@ -68,9 +78,9 @@ const RoomDrawer = ({
         </Box>
       )}
 
-      {isFocused && (
+      {isFocused && rooms.length > 0 && (
         <Box marginTop={1} padding={1} flexDirection="column" borderStyle="single" borderColor="gray">
-          <Text dim>↑/↓: Navigate</Text>
+          <Text dim>↑/↓: Navigate (Circular)</Text>
           <Text dim>Enter: Select</Text>
         </Box>
       )}

@@ -24,7 +24,7 @@ const CommandMenu = ({ onSelect, isFocused }) => {
     if (!isFocused) return;
 
     if (key.return) {
-      console.log(items[selectedIndex])
+      // console.log(items[selectedIndex])
       onSelect(items[selectedIndex]);
     }
   });

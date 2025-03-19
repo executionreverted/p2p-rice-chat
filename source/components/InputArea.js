@@ -185,47 +185,57 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
   });
 
   return (
-    <Box flexDirection="column">
-      <Box borderStyle="single" borderColor={isFocused ? "green" : "gray"}>
+    <Box flexDirection="column" width="100%">
+      <Box
+        borderStyle="single"
+        borderColor={isFocused ? "green" : "gray"}
+        width="100%"
+        flexDirection="row"
+      >
         <Text>›</Text>
-        <TextInput
-          value={inputValue}
-          onChange={handleChange}
-          onSubmit={handleSubmit}
-          placeholder={placeholder || "Type your message..."}
-          focus={isFocused && !isNavigatingSuggestions}
-        />
+        <Box flexGrow={1}>
+          <TextInput
+            value={inputValue}
+            onChange={handleChange}
+            onSubmit={handleSubmit}
+            placeholder={placeholder || "Type your message..."}
+            focus={isFocused && !isNavigatingSuggestions}
+            showCursor={isFocused}
+          />
+        </Box>
       </Box>
 
-      {showSuggestions && (
-        <Box
-          borderStyle="single"
-          borderColor="blue"
-          flexDirection="column"
-          width={20}
-          position="absolute"
-          bottom={2}
-          left={2}
-          backgroundColor="black"
-          zIndex={10}
-        >
-          {suggestions.map((suggestion, index) => (
-            <Text
-              key={suggestion}
-              backgroundColor={index === selectedSuggestion ? "blue" : undefined}
-              color={index === selectedSuggestion ? "white" : undefined}
-            >
-              {suggestion}
-            </Text>
-          ))}
-          {suggestions.length > 0 && (
-            <Box padding={1} borderStyle="single" borderColor="gray">
-              <Text dim>↑/↓: Navigate • Enter: Select</Text>
-            </Box>
-          )}
-        </Box>
-      )}
-    </Box>
+      {
+        showSuggestions && (
+          <Box
+            borderStyle="single"
+            borderColor="blue"
+            flexDirection="column"
+            width={20}
+            position="absolute"
+            bottom={2}
+            left={2}
+            backgroundColor="black"
+            zIndex={10}
+          >
+            {suggestions.map((suggestion, index) => (
+              <Text
+                key={suggestion}
+                backgroundColor={index === selectedSuggestion ? "blue" : undefined}
+                color={index === selectedSuggestion ? "white" : undefined}
+              >
+                {suggestion}
+              </Text>
+            ))}
+            {suggestions.length > 0 && (
+              <Box padding={1} borderStyle="single" borderColor="gray">
+                <Text dim>↑/↓: Navigate • Enter: Select</Text>
+              </Box>
+            )}
+          </Box>
+        )
+      }
+    </Box >
   );
 };
 

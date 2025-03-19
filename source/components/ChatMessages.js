@@ -59,7 +59,7 @@ const ChatMessages = ({ messages, version }) => {
   return (
     <Box
       flexDirection="column"
-      height="80%"
+      height="100%"
       borderStyle="single"
       borderColor="blue"
       padding={1}

@@ -88,7 +88,7 @@ export function SwarmProvider({ children, username }) {
     } else if (currentRoom) {
       addSystemMessage(currentRoom.topic, msg);
     } else {
-      console.log(`[System] ${msg}`);
+      // console.log(`[System] ${msg}`);
     }
   };
 
@@ -222,7 +222,7 @@ export function SwarmProvider({ children, username }) {
     const handleData = (data) => {
       try {
         const message = JSON.parse(b4a.toString(data));
-        console.log('Received message:', message);
+        // console.log('Received message:', message);
 
         if (message.type === 'chat') {
           // Add user message to the message context
@@ -309,9 +309,9 @@ export function SwarmProvider({ children, username }) {
 
     for (const peer of peers) {
       try {
-        console.log(`Sending message to peer: ${b4a.toString(peer.remotePublicKey, 'hex').slice(0, 6)}`);
+        // console.log(`Sending message to peer: ${b4a.toString(peer.remotePublicKey, 'hex').slice(0, 6)}`);
         peer.write(JSON.stringify(message));
-        console.log('Message sent successfully');
+        // console.log console.log('Message sent successfully');
       } catch (err) {
         handleSystemMessage(topicHex, `Error sending message: ${err.message}`);
       }
