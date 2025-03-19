@@ -5,6 +5,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { CHUNK_SIZE, formatBytes, expandPath } from '../utils/index.js';
 import { useSwarmContext } from './useSwarm.js';
+import { useMessageContext } from './useMessages.js';
 
 // Create the FileTransfer context
 const FileTransferContext = createContext(null);
@@ -20,6 +21,7 @@ export function useFileTransferContext() {
 
 // Provider component
 export function FileTransferProvider({ children }) {
+  const { addSystemMessage } = useMessageContext()
   // Get swarm functionality from context
   const { swarms, currentRoom } = useSwarmContext();
 
@@ -38,12 +40,12 @@ export function FileTransferProvider({ children }) {
   const shareFile = (filePath) => {
     try {
       if (!filePath) {
-        onMessage('Usage: /share <file-path>');
+        addSystemMessage('', 'Usage: /share <file-path>');
         return;
       }
 
       if (!currentRoom) {
-        onMessage('You must be in a room to share files');
+        addSystemMessage('', 'You must be in a room to share files');
         return;
       }
 
@@ -52,22 +54,22 @@ export function FileTransferProvider({ children }) {
 
       // Check if file exists
       if (!fs.existsSync(filePath)) {
-        onMessage(`File not found: ${filePath}`);
+        addSystemMessage('', `File not found: ${filePath}`);
         return;
       }
 
       const stats = fs.statSync(filePath);
       if (!stats.isFile()) {
-        onMessage(`Not a file: ${filePath}`);
+        addSystemMessage('', `Not a file: ${filePath}`);
         return;
       }
 
       const filename = path.basename(filePath);
-      onMessage(`Sharing file: ${filename} (${formatBytes(stats.size)})`);
+      addSystemMessage('', `Sharing file: ${filename} (${formatBytes(stats.size)})`);
 
       // Get the swarm for current room
       if (!swarms.has(currentRoom.topic)) {
-        onMessage('Cannot find room swarm');
+        addSystemMessage('', 'Cannot find room swarm');
         return;
       }
 
@@ -105,7 +107,7 @@ export function FileTransferProvider({ children }) {
       // Send to all peers in this room
       const peers = [...roomSwarm.connections];
       if (peers.length === 0) {
-        onMessage('No peers connected in this room. Cannot share file.');
+        addSystemMessage('', 'No peers connected in this room. Cannot share file.');
         return;
       }
 
@@ -113,9 +115,9 @@ export function FileTransferProvider({ children }) {
         peer.write(JSON.stringify(fileShareMsg));
       }
 
-      onMessage(`File offer sent to ${peers.length} peer(s)`);
+      addSystemMessage('', `File offer sent to ${peers.length} peer(s)`);
     } catch (err) {
-      onMessage(`Error sharing file: ${err.message}`);
+      addSystemMessage('', `Error sharing file: ${err.message}`);
     }
   };
 
@@ -132,8 +134,8 @@ export function FileTransferProvider({ children }) {
       timestamp: message.timestamp
     });
 
-    onMessage(`${message.username || peerId} wants to share: ${message.filename} (${formatBytes(message.fileSize)})`);
-    onMessage(`Type "/accept ${message.transferId}" to download the file.`);
+    addSystemMessage('', `${message.username || peerId} wants to share: ${message.filename} (${formatBytes(message.fileSize)})`);
+    addSystemMessage('', `Type "/accept ${message.transferId}" to download the file.`);
   };
 
   // Accept a file transfer
@@ -148,13 +150,13 @@ export function FileTransferProvider({ children }) {
         if (matches.length === 1) {
           transferId = matches[0][0]; // Use the full ID
         } else if (matches.length > 1) {
-          onMessage(`Multiple matching transfers found. Please use more characters from the ID.`);
+          addSystemMessage('', `Multiple matching transfers found. Please use more characters from the ID.`);
           for (const [id, offer] of matches) {
-            onMessage(`- ${id.slice(0, 8)}: ${offer.filename} from ${offer.username}`);
+            addSystemMessage('', `- ${id.slice(0, 8)}: ${offer.filename} from ${offer.username}`);
           }
           return false;
         } else {
-          onMessage(`No pending file transfer with ID: ${transferId}`);
+          addSystemMessage('', `No pending file transfer with ID: ${transferId}`);
           return false;
         }
       }
@@ -205,13 +207,13 @@ export function FileTransferProvider({ children }) {
       // Remove from pending offers
       pendingOffersRef.current.delete(transferId);
 
-      onMessage(`Accepted file transfer: ${offer.filename}`);
-      onMessage(`Will be saved to: ${filePath}`);
+      addSystemMessage('', `Accepted file transfer: ${offer.filename}`);
+      addSystemMessage('', `Will be saved to: ${filePath}`);
 
       updateTransfersUI();
       return true;
     } catch (err) {
-      onMessage(`Error accepting file: ${err.message}`);
+      addSystemMessage('', `Error accepting file: ${err.message}`);
       return false;
     }
   };
@@ -278,12 +280,12 @@ export function useFileTransfer({ username }) {
   const shareFile = (filePath) => {
     try {
       if (!filePath) {
-        onMessage('Usage: /share <file-path>');
+        addSystemMessage('', 'Usage: /share <file-path>');
         return;
       }
 
       if (!currentRoom) {
-        onMessage('You must be in a room to share files');
+        addSystemMessage('', 'You must be in a room to share files');
         return;
       }
 
@@ -292,22 +294,22 @@ export function useFileTransfer({ username }) {
 
       // Check if file exists
       if (!fs.existsSync(filePath)) {
-        onMessage(`File not found: ${filePath}`);
+        addSystemMessage('', `File not found: ${filePath}`);
         return;
       }
 
       const stats = fs.statSync(filePath);
       if (!stats.isFile()) {
-        onMessage(`Not a file: ${filePath}`);
+        addSystemMessage('', `Not a file: ${filePath}`);
         return;
       }
 
       const filename = path.basename(filePath);
-      onMessage(`Sharing file: ${filename} (${formatBytes(stats.size)})`);
+      addSystemMessage('', `Sharing file: ${filename} (${formatBytes(stats.size)})`);
 
       // Get the swarm for current room
       if (!swarms.has(currentRoom.topic)) {
-        onMessage('Cannot find room swarm');
+        addSystemMessage('', 'Cannot find room swarm');
         return;
       }
 
@@ -326,7 +328,7 @@ export function useFileTransfer({ username }) {
       // Send to all peers in this room
       const peers = [...roomSwarm.connections];
       if (peers.length === 0) {
-        onMessage('No peers connected in this room. Cannot share file.');
+        addSystemMessage('', 'No peers connected in this room. Cannot share file.');
         return;
       }
 
@@ -334,9 +336,9 @@ export function useFileTransfer({ username }) {
         peer.write(JSON.stringify(fileShareMsg));
       }
 
-      onMessage(`File offer sent to ${peers.length} peer(s)`);
+      addSystemMessage('', `File offer sent to ${peers.length} peer(s)`);
     } catch (err) {
-      onMessage(`Error sharing file: ${err.message}`);
+      addSystemMessage('', `Error sharing file: ${err.message}`);
     }
   };
 

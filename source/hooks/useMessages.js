@@ -26,7 +26,7 @@ export function MessageProvider({ children }) {
   // Add a message to a room
   const addMessage = (roomTopic, message) => {
     if (!roomTopic) {
-      console.error('Cannot add message - room topic is missing');
+      // console.error('Cannot add message - room topic is missing');
       return false;
     }
 
@@ -43,7 +43,7 @@ export function MessageProvider({ children }) {
       // Trigger UI update
       setMessagesVersion(prev => prev + 1);
 
-      console.log(`Message added to room ${roomTopic}, total: ${newMessages.length}, version: ${messagesVersion + 1}`);
+      // console.log(`Message added to room ${roomTopic}, total: ${newMessages.length}, version: ${messagesVersion + 1}`);
       return true;
     } catch (err) {
       console.error(`Error adding message to room ${roomTopic}:`, err);

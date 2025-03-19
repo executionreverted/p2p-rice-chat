@@ -139,11 +139,6 @@ const App = ({ initialUsername, initialTopic }) => {
         if (joined) {
           // Add to room list and don't trigger another join in the second useEffect
           addRoom(roomToJoin);
-
-          // Initialize message array for this room if not already initialized
-          if (!roomMessagesRef.current.has(roomToJoin.topic)) {
-            roomMessagesRef.current.set(roomToJoin.topic, []);
-          }
         } else {
           addSystemMessage("", "Failed to join initial room. Creating a new one...");
           const newRoom = createRoom("Main Room");
