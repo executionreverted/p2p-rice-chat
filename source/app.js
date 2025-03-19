@@ -9,6 +9,8 @@ import ChatMessages from './components/ChatMessages.js';
 import InputArea from './components/InputArea.js';
 import CommandMenu from './components/CommandMenu.js';
 import TransferStatus from './components/TransferStatus.js';
+import OnlineUsers from './components/OnlineUsers.js';
+
 import { formatBytes, expandPath, copyToClipboard } from './utils/index.js';
 import { useSwarmContext } from './hooks/useSwarm.js';
 import { useFileTransfer } from './hooks/useFileTransfer.js';
@@ -23,7 +25,6 @@ const App = ({ initialUsername, initialTopic }) => {
     addSystemMessage,
     getRoomMessages,
     clearRoomMessages,
-
   } = useMessageContext();
 
 
@@ -64,7 +65,8 @@ const App = ({ initialUsername, initialTopic }) => {
     joinRoom,
     leaveRoom,
     sendToCurrentRoom,
-    getRoomPeerCount
+    getRoomPeerCount,
+    onlineUsers
   } = useSwarmContext({
     username,
   });
@@ -349,7 +351,7 @@ const App = ({ initialUsername, initialTopic }) => {
         break;
 
       case 'clear':
-        clearMessages();
+        clearRoomMessages();
         break;
 
       case 'exit':
@@ -526,6 +528,7 @@ const App = ({ initialUsername, initialTopic }) => {
   };
   // Handle menu selection
   const handleMenuSelect = ({ value }) => {
+    console.log('value: ', value)
     switch (value) {
       case 'help':
         handleCommand('help', []);
@@ -607,13 +610,13 @@ const App = ({ initialUsername, initialTopic }) => {
   });
 
   // Render the room drawer
-  const renderRoomDrawer = () => {
+  const renderRoomDrawer = (w = "20%") => {
     if (!showRooms) return null;
 
     return (
       <Box
-        width={20}
-        height={15}
+        width={w}
+        height={"100%"}
         borderStyle="single"
         borderColor="cyan"
         flexDirection="column"
@@ -655,9 +658,9 @@ const App = ({ initialUsername, initialTopic }) => {
     switch (activeView) {
       case 'nick':
         return (
-          <Box flexDirection="column" borderStyle="single" padding={1}>
-            <Text>Enter new username:</Text>
+          <Box flexDirection="column">
             <InputArea
+              placeholder={"Enter new username:"}
               value={tempInput}
               onChange={setTempInput}
               onSubmit={handleTempSubmit}
@@ -668,9 +671,9 @@ const App = ({ initialUsername, initialTopic }) => {
 
       case 'share':
         return (
-          <Box flexDirection="column" borderStyle="single" padding={1}>
-            <Text>Enter file path to share:</Text>
+          <Box flexDirection="column" >
             <InputArea
+              placeholder={"Enter file path to share:"}
               value={tempInput}
               onChange={setTempInput}
               onSubmit={handleTempSubmit}
@@ -681,9 +684,9 @@ const App = ({ initialUsername, initialTopic }) => {
 
       case 'join':
         return (
-          <Box flexDirection="column" borderStyle="single" padding={1}>
-            <Text>Enter invitation code:</Text>
+          <Box flexDirection="column" >
             <InputArea
+              placeholder={"Enter invitation code:"}
               value={tempInput}
               onChange={setTempInput}
               onSubmit={(value) => {
@@ -698,9 +701,9 @@ const App = ({ initialUsername, initialTopic }) => {
 
       case 'newroom':
         return (
-          <Box flexDirection="column" borderStyle="single" padding={1}>
-            <Text>Enter room name:</Text>
+          <Box flexDirection="column" >
             <InputArea
+              placeholder={"Enter new room name"}
               value={tempInput}
               onChange={setTempInput}
               onSubmit={(value) => {
@@ -728,10 +731,10 @@ const App = ({ initialUsername, initialTopic }) => {
   };
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box marginBottom={1}>
-        <Text backgroundColor="blue" color="white" bold> HyperChat - P2P Chat with File Sharing </Text>
-      </Box>
+    <Box height={"100%"} flexDirection="column" width={"100%"} padding={1}>
+      {/* <Box marginBottom={1}> */}
+      {/*   <Text backgroundColor="blue" color="white" bold> HyperChat - P2P Chat with File Sharing </Text> */}
+      {/* </Box> */}
 
       <StatusBar
         peerCount={peerCount}
@@ -739,21 +742,28 @@ const App = ({ initialUsername, initialTopic }) => {
         room={currentRoom?.name || "Not connected"}
       />
 
-      <Box flexDirection="row" marginY={1}>
+      <Box height={"100%"} flexDirection="row" marginY={1}>
         {renderRoomDrawer()}
 
-        <Box flexDirection="column" width={showRooms ? "50%" : "70%"}>
+        <Box flexDirection="column" height={"100%"} width={"100%"}>
           <ChatMessages messages={getRoomMessages(currentRoom?.topic)} version={messagesVersion} />
           {renderActiveView()}
         </Box>
 
-        {showMenu && (
-          <Box flexDirection="column" width="30%" marginLeft={1}>
-            <CommandMenu onSelect={handleMenuSelect} isFocused={true} />
-            <TransferStatus transfers={transfers} version={transfersVersion} />
-          </Box>
-        )}
+        {
+          showMenu ? (
+            <Box flexDirection="column" width="25%" height={"100%"} marginLeft={1}>
+              <CommandMenu onSelect={handleMenuSelect} isFocused={showMenu} />
+              <TransferStatus transfers={transfers} version={transfersVersion} />
+            </Box>
+          ) :
+            <Box flexDirection="column" height={"100%"} width="25%" marginLeft={1}>
+              <OnlineUsers users={onlineUsers} />
+            </Box>
+        }
+
       </Box>
+
 
       <Box marginTop={1}>
         <Text color="gray">ESC: Toggle Menu | Shift+Tab: Room Drawer | Enter: Submit</Text>

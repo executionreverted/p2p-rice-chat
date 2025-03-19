@@ -18,16 +18,16 @@ const StatusBar = ({ peerCount, username, room }) => {
     return roomName;
   };
   return (
-    <Box borderStyle="single" borderColor="cyan">
-      <Box flexGrow={1} padding={1}>
+    <Box height="20%" borderStyle="single" borderColor="cyan">
+      <Box flexGrow={1} paddingLeft={1}>
         <Text>Username: </Text>
         <Text color="green">{username}</Text>
       </Box>
-      <Box padding={1}>
+      <Box paddingLeft={1}>
         <Text>Room: </Text>
         <Text color="cyan">{formatRoomName(room)}</Text>
       </Box>
-      <Box padding={1}>
+      <Box paddingLeft={1}>
         <Text>Peers: </Text>
         <Text color={peerCount > 0 ? "green" : "blue"}>{peerCount}</Text>
       </Box>

@@ -28,7 +28,7 @@ export function SwarmProvider({ children, username }) {
   const [currentRoom, setCurrentRoom] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [peerCount, setPeerCount] = useState(0);
-
+  const [onlineUsers, setOnlineUsers] = useState([])
   // Current username
   const [currentUsername, setCurrentUsername] = useState(username || 'anonymous');
 
@@ -36,6 +36,50 @@ export function SwarmProvider({ children, username }) {
   const updateUsername = (newUsername) => {
     setCurrentUsername(newUsername);
   };
+
+  // Function to update online users list
+  const updateOnlineUsers = () => {
+    if (!currentRoom || !swarmsRef || !swarmsRef.current.has(currentRoom.topic)) {
+      setOnlineUsers([]);
+      return;
+    }
+
+    const roomSwarm = swarmsRef.current.get(currentRoom.topic);
+    const users = [];
+
+    // Add current user first
+    users.push({
+      id: 'self',
+      username: username,
+      isCurrentUser: true
+    });
+
+    // Add connected peers
+    if (roomSwarm && roomSwarm.connections && roomSwarm.connections.size > 0) {
+      for (const peer of roomSwarm.connections) {
+        try {
+          const peerId = b4a.toString(peer.remotePublicKey, 'hex');
+          const peerName = peer.username || `User ${peerId.slice(0, 6)}`;
+
+          users.push({
+            id: peerId,
+            username: peerName,
+            isCurrentUser: false
+          });
+        } catch (err) {
+          console.error(`Error getting peer details: ${err.message}`);
+        }
+      }
+    }
+
+    setOnlineUsers(users);
+  };
+
+  // Add this after updatePeerCount function
+  // Update online users when the room changes or when peer count changes
+  useEffect(() => {
+    updateOnlineUsers();
+  }, [currentRoom, peerCount]);
 
   // Handle system messages
   const handleSystemMessage = (roomTopic, msg) => {
@@ -68,6 +112,7 @@ export function SwarmProvider({ children, username }) {
 
       return roomData;
     } catch (err) {
+      console.log(err)
       handleSystemMessage(currentRoom?.topic, `Error creating room: ${err.message}`);
       return null;
     }
@@ -304,7 +349,8 @@ export function SwarmProvider({ children, username }) {
     leaveRoom,
     sendToCurrentRoom,
     getRoomPeerCount: updatePeerCount,
-    handleSystemMessage
+    handleSystemMessage,
+    onlineUsers
   };
 
   return (

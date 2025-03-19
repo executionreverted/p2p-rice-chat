@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 // Command history feature
@@ -44,13 +44,14 @@ const useCommandHistory = (initialHistory = []) => {
   };
 };
 
-// Enhanced InputArea component with auto-completion and history
+// Enhanced InputArea component with interactive auto-completion
 const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availableCommands = [] }) => {
   const [inputValue, setInputValue] = useState(value || '');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsRef = useRef([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [isNavigatingSuggestions, setIsNavigatingSuggestions] = useState(false);
 
   const { addToHistory, getPreviousCommand, getNextCommand } = useCommandHistory();
 
@@ -87,6 +88,7 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
       suggestionsRef.current = matchingCommands;
       setShowSuggestions(matchingCommands.length > 0);
       setSelectedSuggestion(0);
+      setIsNavigatingSuggestions(false);
     } else {
       setSuggestions([]);
       setShowSuggestions(false);
@@ -95,6 +97,17 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
 
   // Handle input submission
   const handleSubmit = (submitValue) => {
+    // If navigating suggestions and pressing enter, use the selected suggestion
+    if (isNavigatingSuggestions && showSuggestions && suggestions.length > 0) {
+      const suggestion = suggestions[selectedSuggestion];
+      const newValue = `/${suggestion} `;
+      setInputValue(newValue);
+      onChange(newValue);
+      setShowSuggestions(false);
+      setIsNavigatingSuggestions(false);
+      return;
+    }
+
     // Add to history if it's not empty
     if (submitValue.trim()) {
       addToHistory(submitValue);
@@ -103,29 +116,33 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
     // Reset suggestions
     setSuggestions([]);
     setShowSuggestions(false);
+    setIsNavigatingSuggestions(false);
 
     // Call parent onSubmit
     onSubmit(submitValue);
   };
 
-  // Handle special key events
-  const handleSpecialKeys = (key) => {
+  // Use Ink's useInput hook for better key handling
+  useInput((input, key) => {
+    if (!isFocused) return;
+
     // Tab completion
-    if (key === 'tab' && showSuggestions && suggestions.length > 0) {
+    if (key.tab && showSuggestions && suggestions.length > 0) {
       const suggestion = suggestions[selectedSuggestion];
       const newValue = `/${suggestion} `;
       setInputValue(newValue);
       onChange(newValue);
       setShowSuggestions(false);
-      return true;
+      setIsNavigatingSuggestions(false);
     }
 
-    // Up arrow for previous command or suggestion
-    if (key === 'up') {
+    // Up arrow for navigating suggestions or command history
+    if (key.upArrow) {
       if (showSuggestions) {
         setSelectedSuggestion(
           (selectedSuggestion + suggestions.length - 1) % suggestions.length
         );
+        setIsNavigatingSuggestions(true);
       } else {
         const prevCmd = getPreviousCommand();
         if (prevCmd) {
@@ -133,31 +150,38 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
           onChange(prevCmd);
         }
       }
-      return true;
     }
 
-    // Down arrow for next command or suggestion
-    if (key === 'down') {
+    // Down arrow for navigating suggestions or command history
+    if (key.downArrow) {
       if (showSuggestions) {
         setSelectedSuggestion(
           (selectedSuggestion + 1) % suggestions.length
         );
+        setIsNavigatingSuggestions(true);
       } else {
         const nextCmd = getNextCommand();
         setInputValue(nextCmd);
         onChange(nextCmd);
       }
-      return true;
+    }
+
+    // Enter key to select suggestion or submit input
+    if (key.return && isNavigatingSuggestions && showSuggestions && suggestions.length > 0) {
+      const suggestion = suggestions[selectedSuggestion];
+      const newValue = `/${suggestion} `;
+      setInputValue(newValue);
+      onChange(newValue);
+      setShowSuggestions(false);
+      setIsNavigatingSuggestions(false);
     }
 
     // Escape to clear suggestions
-    if (key === 'escape') {
+    if (key.escape) {
       setShowSuggestions(false);
-      return false; // Allow escape to bubble up
+      setIsNavigatingSuggestions(false);
     }
-
-    return false;
-  };
+  });
 
   return (
     <Box flexDirection="column">
@@ -168,8 +192,7 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
           onChange={handleChange}
           onSubmit={handleSubmit}
           placeholder={placeholder || "Type your message..."}
-          focus={isFocused}
-        // Add TextInput-specific props for key handling here if needed
+          focus={isFocused && !isNavigatingSuggestions}
         />
       </Box>
 
@@ -182,6 +205,8 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
           position="absolute"
           bottom={2}
           left={2}
+          backgroundColor="black"
+          zIndex={10}
         >
           {suggestions.map((suggestion, index) => (
             <Text
@@ -192,6 +217,11 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
               {suggestion}
             </Text>
           ))}
+          {suggestions.length > 0 && (
+            <Box padding={1} borderStyle="single" borderColor="gray">
+              <Text dim>↑/↓: Navigate • Enter: Select</Text>
+            </Box>
+          )}
         </Box>
       )}
     </Box>
