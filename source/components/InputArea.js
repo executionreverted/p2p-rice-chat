@@ -62,6 +62,7 @@ const InputArea = ({ value, onChange, onSubmit, placeholder, isFocused, availabl
 
   // Handle input changes
   const handleChange = (newValue) => {
+    if (!isFocused) return
     setInputValue(newValue);
     onChange(newValue);
 

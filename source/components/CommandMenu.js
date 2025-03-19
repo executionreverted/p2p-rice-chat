@@ -60,6 +60,7 @@ const CommandMenu = ({ onSelect, isFocused }) => {
       alignItems={"flex-start"}
       overflowY="scroll"
       width={"100%"}
+      padding={1}
     >
       <Box paddingRight={1} backgroundColor="blue" width="100%">
         <Text bold color="white">Menu</Text>
