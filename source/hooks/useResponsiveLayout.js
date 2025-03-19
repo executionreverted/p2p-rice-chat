@@ -1,5 +1,5 @@
-// hooks/useResponsiveLayout.js
-import { useState, useEffect, useCallback, useRef } from 'react';
+// hooks/ResponsiveLayoutContext.js
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 // Define breakpoints
 const BREAKPOINTS = {
@@ -29,7 +29,11 @@ const MIN_DIMS = {
   HELP_BAR_HEIGHT: 2
 };
 
-export function useResponsiveLayout() {
+// Create the context
+const ResponsiveLayoutContext = createContext(null);
+
+// Provider component
+export function ResponsiveLayoutProvider({ children }) {
   // Terminal dimensions cache
   const lastKnownSize = useRef({
     columns: process.stdout.columns || 80,
@@ -83,7 +87,8 @@ export function useResponsiveLayout() {
 
     // Safety margins to prevent overflow
     const safeColumns = Math.max(columns - 2, 40); // 2 columns safety margin
-    const safeRows = Math.max(rows - 1, 15);
+    const safeRows = Math.max(rows - 1, 15);       // 1 row safety margin
+
     // Determine layout mode based on available space
     let mode = LAYOUTS.NORMAL;
     if (columns < BREAKPOINTS.MINI.columns || rows < BREAKPOINTS.MINI.rows) {
@@ -237,7 +242,7 @@ export function useResponsiveLayout() {
         const newLayout = calculateLayout();
         setLayout(newLayout);
         resizeTimeoutRef.current = null;
-      }, 100); // 100ms debounce
+      }, 150); // 150ms debounce
     };
 
     // Initial calculation
@@ -256,7 +261,20 @@ export function useResponsiveLayout() {
     };
   }, [calculateLayout]);
 
-  return layout;
+  return (
+    <ResponsiveLayoutContext.Provider value={layout}>
+      {children}
+    </ResponsiveLayoutContext.Provider>
+  );
+}
+
+// Custom hook to use the context
+export function useResponsiveLayout() {
+  const context = useContext(ResponsiveLayoutContext);
+  if (!context) {
+    throw new Error('useResponsiveLayout must be used within a ResponsiveLayoutProvider');
+  }
+  return context;
 }
 
 export default useResponsiveLayout;

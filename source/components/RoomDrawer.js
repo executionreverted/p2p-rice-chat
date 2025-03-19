@@ -97,7 +97,7 @@ const RoomDrawer = ({
               padding={compact ? 0 : 1}
               backgroundColor={index === selectedIndex ? (isFocused ? "green" : "cyan") : undefined}
             >
-              <Text color={index === selectedIndex ? "black" : "white"}>
+              <Text color={index === selectedIndex ? "blue" : "white"}>
                 {compact && index < 9 ? `${index + 1}:` : ""} {formatRoomName(room, index)}
               </Text>
             </Box>

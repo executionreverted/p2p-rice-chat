@@ -61,15 +61,6 @@ Examples:
 // Start the application
 const { username, topic } = parseArgs();
 render(
-  <MessageProvider>
-    <SwarmProvider
-      username={username}
-    >
-      <FileTransferProvider
-        username={username}
-      >
-        <App initialUsername={username} initialTopic={topic} />
-      </FileTransferProvider>
-    </SwarmProvider>
-  </MessageProvider>
+
+  <App initialUsername={username} initialTopic={topic} />
 );
